@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -39,9 +40,10 @@ def build_plan_pdf(analysis: dict) -> bytes:
     scores = analysis.get("scores", {})
     sources = analysis.get("sources", [])
     tasks = analysis.get("workPlan", [])
+    narrative = str(analysis.get("narrative") or "").strip()
 
     story = [
-        Paragraph("그루플랜 AI 산림경영계획서 초안", styles["KoTitle"]),
+        Paragraph("GruPlan 산림경영계획서 초안", styles["KoTitle"]),
         Paragraph("행정 제출 전 산림기술자 또는 담당 기관의 검토가 필요한 참고 문서입니다.", styles["KoBody"]),
         Spacer(1, 8),
     ]
@@ -50,6 +52,14 @@ def build_plan_pdf(analysis: dict) -> bytes:
     for label, key in [("PNU", "pnu"), ("주소", "address"), ("면적", "areaHa"), ("행정구역", "adminName")]:
         parcel_rows.append([label, str(parcel.get(key, "확인 필요"))])
     story.append(Table(parcel_rows, colWidths=[32 * mm, 126 * mm], style=_table_style(font_name)))
+
+    if narrative:
+        story.append(Paragraph("경영 방향 요약", styles["KoHeading"]))
+        for paragraph in narrative.splitlines():
+            paragraph = paragraph.strip()
+            if paragraph:
+                story.append(Paragraph(escape(paragraph), styles["KoBody"]))
+                story.append(Spacer(1, 3))
 
     story.append(Paragraph("시나리오 점수", styles["KoHeading"]))
     score_rows = [["지표", "점수"]]

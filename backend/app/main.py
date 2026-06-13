@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from .data_catalog import PUBLIC_DATA_SOURCES, SOURCE_BY_ID
 from .db import Database
+from .llm import generate_plan_narrative
 from .public_clients import PublicApiClient, PublicDataError
 from .reports import build_plan_pdf
 from .scoring import FeatureSet, score_features
@@ -73,6 +74,7 @@ async def health():
             "OPENAI_API_KEY": bool(settings.openai_api_key),
             "FIRE_RISK_ENDPOINT": bool(settings.fire_risk_endpoint),
         },
+        "llm": {"model": settings.openai_model},
         "sources": len(PUBLIC_DATA_SOURCES),
     }
 
@@ -202,7 +204,9 @@ async def resource_stats(classId: str | None = None):
 
 @app.post("/api/reports/plan")
 async def plan_report(payload: ReportRequest, _: BackgroundTasks):
-    pdf = build_plan_pdf(payload.analysis)
+    analysis = dict(payload.analysis)
+    analysis["narrative"] = await generate_plan_narrative(settings, analysis)
+    pdf = build_plan_pdf(analysis)
     return Response(
         pdf,
         media_type="application/pdf",
@@ -331,6 +335,10 @@ async def _query_spatial_features(payload: AnalysisRequest):
 def _number_or_none(value) -> float | None:
     if value in (None, ""):
         return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _first_vworld_point(search: dict) -> dict | None:
@@ -341,10 +349,6 @@ def _first_vworld_point(search: dict) -> dict | None:
     try:
         return {"lon": float(point["x"]), "lat": float(point["y"])}
     except (KeyError, TypeError, ValueError):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
         return None
 
 

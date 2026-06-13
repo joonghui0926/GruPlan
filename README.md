@@ -24,7 +24,7 @@ Set-Location backend
 
 ## 데이터 연결
 
-분석 결과는 연결된 공공데이터를 기준으로 생성됩니다. `DATA_GO_KR_SERVICE_KEY`, `VWORLD_API_KEY`, `DATABASE_URL`을 설정하고 원본 공간데이터를 적재하면 필지 분석 흐름이 활성화됩니다.
+분석 결과는 연결된 공공데이터를 기준으로 생성됩니다. `DATA_GO_KR_SERVICE_KEY`, `VWORLD_API_KEY`, `DATABASE_URL`을 설정하고 원본 공간데이터를 적재하면 필지 분석 흐름이 활성화됩니다. 보고서 문장 생성에는 `OPENAI_API_KEY`를 사용할 수 있으며, 기본 모델은 비용과 품질 균형을 고려해 `gpt-5.4-mini`로 설정되어 있습니다.
 
 공간데이터 적재 예시는 아래와 같습니다.
 
@@ -37,6 +37,19 @@ python backend/scripts/ingest_spatial.py --source D5 --file data/raw/landslide/L
 
 ```powershell
 python backend/scripts/sync_public_sources.py --database-url $env:DATABASE_URL
+```
+
+## Render 환경변수
+
+Render Web Service에는 아래 값을 넣습니다. 키 값은 저장소에 넣지 않고 Render 환경변수에만 저장합니다.
+
+```text
+DATA_GO_KR_SERVICE_KEY=공공데이터포털 Decoding 인증키
+VWORLD_API_KEY=VWorld 운영 인증키
+OPENAI_API_KEY=OpenAI Project API Key
+OPENAI_MODEL=gpt-5.4-mini
+FIRE_RISK_ENDPOINT=
+CORS_ORIGINS=*
 ```
 
 ## 주요 기능
