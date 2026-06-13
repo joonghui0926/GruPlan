@@ -55,6 +55,10 @@ class ReportRequest(BaseModel):
     analysis: dict
 
 
+def _public_error(exc: PublicDataError) -> dict:
+    return {"error": {"message": str(exc), "sourceId": exc.source_id}}
+
+
 @app.get("/")
 async def index():
     html = Path(__file__).resolve().parents[2] / "gruplan.html"
@@ -113,7 +117,7 @@ async def lookup_parcel(payload: ParcelLookupRequest):
             cadastral = await public_client.cadastral_by_point(point["lon"], point["lat"])
             return {"search": search, "cadastral": cadastral}
     except PublicDataError as exc:
-        raise HTTPException(status_code=exc.status_code, detail={"message": str(exc), "sourceId": exc.source_id}) from exc
+        return _public_error(exc)
     raise HTTPException(status_code=400, detail="query 또는 lat/lon을 입력하세요.")
 
 
@@ -167,7 +171,7 @@ async def mountain_weather(obsid: str | None = None, localArea: str | None = Non
     try:
         return await public_client.mountain_weather(obsid=obsid, local_area=localArea)
     except PublicDataError as exc:
-        raise HTTPException(status_code=exc.status_code, detail={"message": str(exc), "sourceId": exc.source_id}) from exc
+        return _public_error(exc)
 
 
 @app.get("/api/live/fire-risk")
@@ -175,7 +179,7 @@ async def fire_risk(sigunguCode: str | None = None):
     try:
         return await public_client.fire_risk(sigunguCode=sigunguCode)
     except PublicDataError as exc:
-        raise HTTPException(status_code=exc.status_code, detail={"message": str(exc), "sourceId": exc.source_id}) from exc
+        return _public_error(exc)
 
 
 @app.get("/api/forest-companies")
@@ -183,7 +187,7 @@ async def forest_companies(tradeName: str | None = None, captain: str | None = N
     try:
         return await public_client.forest_companies(trade_name=tradeName, captain=captain)
     except PublicDataError as exc:
-        raise HTTPException(status_code=exc.status_code, detail={"message": str(exc), "sourceId": exc.source_id}) from exc
+        return _public_error(exc)
 
 
 @app.get("/api/economic-forest")
@@ -191,7 +195,7 @@ async def economic_forest(search: str | None = None, frstType: str | None = None
     try:
         return await public_client.economic_forest(search=search, frst_type=frstType)
     except PublicDataError as exc:
-        raise HTTPException(status_code=exc.status_code, detail={"message": str(exc), "sourceId": exc.source_id}) from exc
+        return _public_error(exc)
 
 
 @app.get("/api/resource-stats")
@@ -199,7 +203,7 @@ async def resource_stats(classId: str | None = None):
     try:
         return await public_client.resource_stats(class_id=classId)
     except PublicDataError as exc:
-        raise HTTPException(status_code=exc.status_code, detail={"message": str(exc), "sourceId": exc.source_id}) from exc
+        return _public_error(exc)
 
 
 @app.post("/api/reports/plan")

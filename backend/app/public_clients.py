@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from json import JSONDecodeError
 from urllib.parse import urlencode
 
 import httpx
@@ -32,19 +33,53 @@ def _compact_xml(element: ET.Element) -> dict | str:
     return data
 
 
-async def fetch_xml(url: str, params: dict) -> dict:
-    async with httpx.AsyncClient(timeout=18) as client:
-        response = await client.get(url, params=params)
-        response.raise_for_status()
-    root = ET.fromstring(response.text)
-    return {root.tag: _compact_xml(root)}
+def _upstream_message(response: httpx.Response) -> str:
+    text = response.text.strip().replace("\n", " ")
+    return text[:260] if text else response.reason_phrase
 
 
-async def fetch_json(url: str, params: dict) -> dict:
-    async with httpx.AsyncClient(timeout=18) as client:
-        response = await client.get(url, params=params)
-        response.raise_for_status()
-    return response.json()
+async def fetch_xml(url: str, params: dict, source_id: str) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=18) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+        root = ET.fromstring(response.text)
+        return {root.tag: _compact_xml(root)}
+    except httpx.HTTPStatusError as exc:
+        raise PublicDataError(f"제공기관 응답 오류: {_upstream_message(exc.response)}", 502, source_id) from exc
+    except (httpx.HTTPError, ET.ParseError) as exc:
+        raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, source_id) from exc
+
+
+async def fetch_json(url: str, params: dict, source_id: str) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=18) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+        data = response.json()
+    except httpx.HTTPStatusError as exc:
+        raise PublicDataError(f"제공기관 응답 오류: {_upstream_message(exc.response)}", 502, source_id) from exc
+    except (httpx.HTTPError, JSONDecodeError) as exc:
+        raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, source_id) from exc
+
+    message = _provider_error_message(data)
+    if message:
+        raise PublicDataError(message, 502, source_id)
+    return data
+
+
+def _provider_error_message(data: dict) -> str | None:
+    response = data.get("response") if isinstance(data, dict) else None
+    if not isinstance(response, dict):
+        return None
+    if str(response.get("status", "")).upper() != "ERROR":
+        return None
+    error = response.get("error")
+    if isinstance(error, dict):
+        text = error.get("text") or error.get("message") or error.get("code")
+        if text:
+            return f"제공기관 응답 오류: {text}"
+    return "제공기관 응답 오류"
 
 
 class PublicApiClient:
@@ -76,7 +111,7 @@ class PublicApiClient:
             "query": query,
             "key": key,
         }
-        return await fetch_json("https://api.vworld.kr/req/search", params)
+        return await fetch_json("https://api.vworld.kr/req/search", params, "D12")
 
     async def cadastral_by_point(self, lon: float, lat: float) -> dict:
         key = self.require_vworld_key()
@@ -90,7 +125,7 @@ class PublicApiClient:
             "size": 10,
             "key": key,
         }
-        return await fetch_json("https://api.vworld.kr/req/data", params)
+        return await fetch_json("https://api.vworld.kr/req/data", params, "D12")
 
     async def mountain_weather(self, obsid: str | None = None, local_area: str | None = None) -> dict:
         key = self.require_data_key("D7")
@@ -104,7 +139,7 @@ class PublicApiClient:
             params["obsid"] = obsid
         if local_area:
             params["localArea"] = local_area
-        return await fetch_json("http://apis.data.go.kr/1400377/mtweather/mountListSearch", params)
+        return await fetch_json("http://apis.data.go.kr/1400377/mtweather/mountListSearch", params, "D7")
 
     async def economic_forest(self, search: str | None = None, frst_type: str | None = None) -> dict:
         key = self.require_data_key("D8")
@@ -113,7 +148,7 @@ class PublicApiClient:
             params["searchPlcNm"] = search
         if frst_type:
             params["frstType"] = frst_type
-        return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/ecoFrstyOpenAPI", params)
+        return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/ecoFrstyOpenAPI", params, "D8")
 
     async def forest_companies(self, trade_name: str | None = None, captain: str | None = None) -> dict:
         key = self.require_data_key("D10")
@@ -122,14 +157,14 @@ class PublicApiClient:
             params["tradeName"] = trade_name
         if captain:
             params["captain"] = captain
-        return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/corInfoOpenAPI", params)
+        return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/corInfoOpenAPI", params, "D10")
 
     async def resource_stats(self, class_id: str | None = None) -> dict:
         key = self.require_data_key("D11")
         params = {"serviceKey": key, "pageNo": 1, "numOfRows": 20}
         if class_id:
             params["clsscId"] = class_id
-        return await fetch_json("http://apis.data.go.kr/1400000/frsas1/selectStatList1", params)
+        return await fetch_json("http://apis.data.go.kr/1400000/frsas1/selectStatList1", params, "D11")
 
     async def fire_risk(self, **params) -> dict:
         key = self.require_data_key("D6")
@@ -143,10 +178,15 @@ class PublicApiClient:
         separator = "&" if "?" in self.settings.fire_risk_endpoint else "?"
         url = self.settings.fire_risk_endpoint + separator + urlencode(query)
         async with httpx.AsyncClient(timeout=18) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            ctype = response.headers.get("content-type", "")
-            if "json" in ctype:
-                return response.json()
-            root = ET.fromstring(response.text)
-            return {root.tag: _compact_xml(root)}
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+                ctype = response.headers.get("content-type", "")
+                if "json" in ctype:
+                    return response.json()
+                root = ET.fromstring(response.text)
+                return {root.tag: _compact_xml(root)}
+            except httpx.HTTPStatusError as exc:
+                raise PublicDataError(f"제공기관 응답 오류: {_upstream_message(exc.response)}", 502, "D6") from exc
+            except (httpx.HTTPError, ET.ParseError, JSONDecodeError) as exc:
+                raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, "D6") from exc
