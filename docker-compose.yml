@@ -1,0 +1,42 @@
+name: gruplan
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: gruplan-postgis
+    environment:
+      POSTGRES_DB: gruplan
+      POSTGRES_USER: gruplan
+      POSTGRES_PASSWORD: gruplan
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis-data:/var/lib/postgresql/data
+      - ./backend/app/sql/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+
+  redis:
+    image: redis:7-alpine
+    container_name: gruplan-redis
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: gruplan-api
+    depends_on:
+      - postgis
+      - redis
+    environment:
+      DATABASE_URL: postgresql://gruplan:gruplan@postgis:5432/gruplan
+      DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
+      VWORLD_API_KEY: ${VWORLD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FIRE_RISK_ENDPOINT: ${FIRE_RISK_ENDPOINT:-}
+      CORS_ORIGINS: "*"
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgis-data:

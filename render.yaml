@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: gruplan-ai
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: DATA_GO_KR_SERVICE_KEY
+        sync: false
+      - key: VWORLD_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: FIRE_RISK_ENDPOINT
+        sync: false

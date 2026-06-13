@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+def clamp(value: float, low: float = 0, high: float = 100) -> float:
+    return max(low, min(high, value))
+
+
+def distance_score(meters: float | None) -> float:
+    if meters is None:
+        return 0
+    if meters <= 100:
+        return 100
+    if meters >= 2000:
+        return 20
+    return clamp(100 - ((meters - 100) / 1900) * 80)
+
+
+def slope_penalty(slope_degree: float | None) -> float:
+    if slope_degree is None:
+        return 18
+    if slope_degree <= 15:
+        return 0
+    if slope_degree >= 35:
+        return 35
+    return (slope_degree - 15) * 1.75
+
+
+def landslide_risk_score(avg_grade: float | None, high_risk_ratio: float | None) -> float:
+    if avg_grade is None and high_risk_ratio is None:
+        return 0
+    grade = avg_grade if avg_grade is not None else 5
+    ratio = high_risk_ratio if high_risk_ratio is not None else 0
+    grade_component = clamp((6 - grade) * 18)
+    ratio_component = clamp(ratio * 100) * 0.45
+    return clamp(grade_component + ratio_component)
+
+
+@dataclass
+class FeatureSet:
+    area_ha: float | None = None
+    road_distance_m: float | None = None
+    road_density_m_per_ha: float | None = None
+    slope_degree: float | None = None
+    avg_landslide_grade: float | None = None
+    high_landslide_ratio: float | None = None
+    fire_risk_index: float | None = None
+    economic_forest: bool = False
+    planting_fit_count: int = 0
+    stand_age_class: int | None = None
+    carbon_case_similarity: float | None = None
+
+
+def score_features(features: FeatureSet) -> dict:
+    access = distance_score(features.road_distance_m) - slope_penalty(features.slope_degree)
+    if features.road_density_m_per_ha is not None:
+        access += clamp(features.road_density_m_per_ha * 8, 0, 18)
+
+    disaster = landslide_risk_score(features.avg_landslide_grade, features.high_landslide_ratio)
+    if features.fire_risk_index is not None:
+        disaster = clamp(disaster * 0.65 + features.fire_risk_index * 0.35)
+
+    stand_age = features.stand_age_class or 0
+    productivity = 48 + (18 if features.economic_forest else 0) + min(features.planting_fit_count * 7, 21)
+    productivity += min(stand_age * 2.5, 16)
+
+    profit = productivity * 0.56 + clamp(access) * 0.34 + (100 - disaster) * 0.10
+    carbon_base = 38 + min(stand_age * 4, 24) + min((features.area_ha or 0) * 2, 16)
+    if features.carbon_case_similarity is not None:
+        carbon_base += features.carbon_case_similarity * 22
+    conservation = disaster * 0.58 + slope_penalty(features.slope_degree) * 1.1
+    resilience = disaster * 0.62 + (100 - clamp(access)) * 0.20 + min((features.area_ha or 0) * 2, 18)
+
+    scores = {
+        "accessibility": round(clamp(access), 1),
+        "disasterRisk": round(clamp(disaster), 1),
+        "profit": round(clamp(profit), 1),
+        "carbon": round(clamp(carbon_base), 1),
+        "conservation": round(clamp(conservation), 1),
+        "resilience": round(clamp(resilience), 1),
+    }
+    scores["recommendedScenario"] = max(
+        {
+            "수익형 경영": scores["profit"],
+            "탄소형 경영": scores["carbon"],
+            "보전형 경영": scores["conservation"],
+            "재난저감형 경영": scores["resilience"],
+        },
+        key=lambda key: {
+            "수익형 경영": scores["profit"],
+            "탄소형 경영": scores["carbon"],
+            "보전형 경영": scores["conservation"],
+            "재난저감형 경영": scores["resilience"],
+        }[key],
+    )
+    return scores

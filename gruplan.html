@@ -1,0 +1,1225 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gruplan AI 산림자산 경영 플랫폼</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <style>
+    :root {
+      --forest: #102615;
+      --pine: #1f4b2a;
+      --leaf: #6aa84f;
+      --mint: #dfeede;
+      --clay: #b36b35;
+      --sky: #356f94;
+      --ink: #1e261f;
+      --muted: #687268;
+      --line: #d5dfd0;
+      --paper: #f7faf5;
+      --white: #ffffff;
+      --danger: #be4b3f;
+      --warn: #bd8335;
+      --ok: #3d7f54;
+      --shadow: 0 18px 54px rgba(18, 35, 20, .16);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans KR", system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.62;
+      letter-spacing: 0;
+    }
+    button, input { font: inherit; }
+    button { border: 0; cursor: pointer; }
+    .icon { width: 18px; height: 18px; stroke-width: 2; }
+
+    .topNav {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 900;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      background: rgba(16, 38, 21, .94);
+      backdrop-filter: blur(14px);
+      color: var(--white);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--white);
+      text-decoration: none;
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .brandMark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      color: var(--forest);
+      background: linear-gradient(135deg, #9dd27d, #d8edb4);
+      border-radius: 8px;
+    }
+    .navCluster {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .navPill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.09);
+      color: rgba(255,255,255,.8);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .navPill strong { color: var(--white); font-weight: 600; }
+
+    .workspace {
+      height: 100vh;
+      min-height: 720px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 430px;
+      padding-top: 64px;
+      background: #edf4ea;
+      overflow: hidden;
+    }
+    .mapStage {
+      position: relative;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      background: #d9e5d8;
+    }
+    #map {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+    .mapShade {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      background:
+        linear-gradient(90deg, rgba(16,38,21,.64), rgba(16,38,21,.08) 38%, rgba(16,38,21,0) 62%),
+        linear-gradient(0deg, rgba(16,38,21,.36), rgba(16,38,21,0) 35%);
+    }
+    .mapHeader {
+      position: absolute;
+      z-index: 4;
+      left: 34px;
+      top: 34px;
+      width: min(760px, calc(100% - 68px));
+      color: var(--white);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #c8efb3;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 12px;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .mapHeader h1 {
+      margin: 0 0 16px;
+      max-width: 720px;
+      font-size: clamp(34px, 4.4vw, 58px);
+      line-height: 1.08;
+      letter-spacing: 0;
+      word-break: keep-all;
+    }
+    .mapHeader p {
+      margin: 0 0 28px;
+      width: min(510px, 100%);
+      color: rgba(255,255,255,.76);
+      font-size: 16px;
+    }
+    .mapHint {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 16px 0 0;
+      padding: 9px 13px;
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 999px;
+      background: rgba(16,38,21,.76);
+      color: rgba(255,255,255,.96);
+      backdrop-filter: blur(12px);
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 12px 36px rgba(16,38,21,.22);
+    }
+    .searchDock {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      width: min(620px, 100%);
+      padding: 7px;
+      background: rgba(255,255,255,.96);
+      border: 1px solid rgba(255,255,255,.52);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+    }
+    .searchDock label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      padding-left: 12px;
+      min-width: 0;
+    }
+    .searchDock input {
+      width: 100%;
+      min-width: 80px;
+      border: 0;
+      outline: 0;
+      color: var(--ink);
+      background: transparent;
+      font-size: 15px;
+    }
+    .primaryBtn, .ghostBtn, .iconBtn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      border-radius: 9px;
+      transition: transform .16s ease, background .16s ease, color .16s ease;
+      white-space: nowrap;
+    }
+    .primaryBtn {
+      padding: 0 17px;
+      background: var(--pine);
+      color: var(--white);
+      font-weight: 700;
+    }
+    .primaryBtn:hover { background: #276138; transform: translateY(-1px); }
+    .ghostBtn {
+      padding: 0 15px;
+      background: #ecf4e8;
+      color: var(--pine);
+      font-weight: 700;
+    }
+    .iconBtn {
+      width: 42px;
+      background: rgba(255,255,255,.12);
+      color: var(--white);
+    }
+    .iconBtn:hover { background: rgba(255,255,255,.2); }
+    .mapTools {
+      position: absolute;
+      z-index: 5;
+      left: 34px;
+      bottom: 28px;
+      display: flex;
+      align-items: stretch;
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 12px;
+      background: rgba(16,38,21,.8);
+      backdrop-filter: blur(12px);
+    }
+    .mapTools button {
+      width: 46px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      color: rgba(255,255,255,.78);
+      background: transparent;
+      border-right: 1px solid rgba(255,255,255,.12);
+    }
+    .mapTools button:last-child { border-right: 0; }
+    .mapTools button:hover, .mapTools button.active {
+      color: var(--white);
+      background: rgba(255,255,255,.12);
+    }
+    .sourceRail {
+      position: absolute;
+      z-index: 5;
+      right: 26px;
+      bottom: 28px;
+      width: min(560px, calc(100% - 52px));
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: rgba(255,255,255,.93);
+      border: 1px solid rgba(255,255,255,.6);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .sourceRailItem {
+      min-height: 74px;
+      padding: 13px 15px;
+      border-right: 1px solid var(--line);
+    }
+    .sourceRailItem:last-child { border-right: 0; }
+    .sourceRailItem span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .sourceRailItem strong {
+      display: block;
+      color: var(--ink);
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .sidePanel {
+      height: 100%;
+      min-height: 0;
+      padding: 28px 28px 34px;
+      background: var(--paper);
+      border-left: 1px solid var(--line);
+      overflow-y: auto;
+    }
+    .panelHead {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .panelHead h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      line-height: 1.25;
+    }
+    .panelHead p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .statusDot {
+      width: 12px;
+      height: 12px;
+      flex: 0 0 auto;
+      margin-top: 8px;
+      border-radius: 999px;
+      background: var(--warn);
+      box-shadow: 0 0 0 5px rgba(189,131,53,.14);
+    }
+    .statusDot.ready {
+      background: var(--ok);
+      box-shadow: 0 0 0 5px rgba(61,127,84,.14);
+    }
+    .panelBlock {
+      padding: 24px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .blockTitle {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 14px;
+      color: var(--forest);
+      font-weight: 800;
+      font-size: 14px;
+    }
+    .metaGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+    .metaItem small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+    .metaItem strong {
+      display: block;
+      color: var(--ink);
+      font-size: 15px;
+      word-break: keep-all;
+    }
+    .actionStack {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .fullAction { grid-column: 1 / -1; }
+    .quietBtn {
+      min-height: 42px;
+      border-radius: 9px;
+      background: #e8efe4;
+      color: var(--forest);
+      font-weight: 700;
+    }
+    .quietBtn:hover { background: #dfe9d9; }
+    .notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .notice strong { color: var(--ink); }
+    .scoreRows {
+      display: grid;
+      gap: 13px;
+    }
+    .scoreRow {
+      display: grid;
+      grid-template-columns: 88px 1fr 44px;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .scoreTrack {
+      height: 7px;
+      border-radius: 999px;
+      background: #dbe4d6;
+      overflow: hidden;
+    }
+    .scoreFill {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--pine);
+      transition: width .5s ease;
+    }
+    .scoreValue {
+      text-align: right;
+      color: var(--ink);
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 700;
+    }
+    .taskList {
+      display: grid;
+      gap: 12px;
+    }
+    .taskItem {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+    .taskIcon {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: #e4efdf;
+      color: var(--pine);
+    }
+    .taskItem strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+    .taskItem span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .sourceTable {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .sourceTable tr {
+      border-bottom: 1px solid var(--line);
+    }
+    .sourceTable tr:last-child { border-bottom: 0; }
+    .sourceTable td {
+      padding: 10px 0;
+      vertical-align: top;
+    }
+    .sourceTable td:first-child {
+      width: 40px;
+      color: var(--muted);
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 700;
+    }
+    .sourceTable .sourceName { font-weight: 700; color: var(--ink); }
+    .sourceTable .sourceUse { color: var(--muted); margin-top: 2px; }
+    .statusBadge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--forest);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .statusBadge.need { color: var(--warn); }
+    .statusBadge.missing { color: var(--danger); }
+
+    .band {
+      padding: 86px 42px;
+    }
+    .bandInner {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    .sectionLabel {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--pine);
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .band h2 {
+      margin: 0 0 14px;
+      font-size: clamp(28px, 4vw, 44px);
+      line-height: 1.18;
+    }
+    .lead {
+      margin: 0;
+      max-width: 680px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+    .flow {
+      margin-top: 54px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .flowStep {
+      min-height: 210px;
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+    }
+    .flowStep:last-child { border-right: 0; }
+    .flowStep .stepNo {
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 18px;
+    }
+    .flowStep h3 {
+      margin: 12px 0 8px;
+      font-size: 17px;
+    }
+    .flowStep p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .matrix {
+      margin-top: 46px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 34px;
+    }
+    .plainTable {
+      width: 100%;
+      border-collapse: collapse;
+      border-top: 2px solid var(--forest);
+      font-size: 14px;
+      background: transparent;
+    }
+    .plainTable th, .plainTable td {
+      padding: 15px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    .plainTable th {
+      color: var(--forest);
+      font-weight: 800;
+    }
+    .darkBand {
+      background: var(--forest);
+      color: var(--white);
+    }
+    .darkBand .sectionLabel { color: #bce6a4; }
+    .darkBand .lead { color: rgba(255,255,255,.62); }
+    .darkBand .plainTable {
+      border-top-color: rgba(255,255,255,.62);
+      color: rgba(255,255,255,.82);
+    }
+    .darkBand .plainTable th {
+      color: var(--white);
+    }
+    .darkBand .plainTable th, .darkBand .plainTable td {
+      border-bottom-color: rgba(255,255,255,.14);
+    }
+    .heroReveal {
+      opacity: 0;
+      transform: translateY(18px);
+      animation: heroRise .72s cubic-bezier(.22,1,.36,1) forwards;
+    }
+    .heroReveal:nth-child(2) { animation-delay: .08s; }
+    .heroReveal:nth-child(3) { animation-delay: .16s; }
+    .heroReveal:nth-child(4) { animation-delay: .24s; }
+    .heroReveal:nth-child(5) { animation-delay: .2s; }
+    .reveal {
+      opacity: 0;
+      transform: translateY(34px);
+      transition:
+        opacity .72s cubic-bezier(.22,1,.36,1),
+        transform .72s cubic-bezier(.22,1,.36,1);
+    }
+    .reveal.isVisible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .flowStep.reveal:nth-child(2) { transition-delay: .06s; }
+    .flowStep.reveal:nth-child(3) { transition-delay: .12s; }
+    .flowStep.reveal:nth-child(4) { transition-delay: .18s; }
+    .flowStep.reveal:nth-child(5) { transition-delay: .24s; }
+    .plainTable.reveal:nth-child(2) { transition-delay: .1s; }
+    @keyframes heroRise {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .heroReveal,
+      .reveal {
+        opacity: 1;
+        transform: none;
+        animation: none;
+        transition: none;
+      }
+    }
+    footer {
+      padding: 38px 42px;
+      background: #111b13;
+      color: rgba(255,255,255,.62);
+      font-size: 13px;
+    }
+    footer strong { color: var(--white); }
+
+    .leaflet-control-attribution {
+      font-size: 10px;
+    }
+
+    @media (max-width: 1120px) {
+      .workspace {
+        height: auto;
+        min-height: 0;
+        grid-template-columns: 1fr;
+        overflow: visible;
+      }
+      .sidePanel {
+        min-height: auto;
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+      .mapStage { min-height: 760px; }
+      .sourceRail { left: 26px; right: 26px; width: auto; }
+    }
+    @media (max-width: 760px) {
+      .topNav { padding: 0 16px; }
+      .navPill span.optional { display: none; }
+      .workspace { padding-top: 64px; }
+      .mapStage { min-height: 720px; }
+      .mapHeader { left: 18px; top: 24px; width: calc(100% - 36px); }
+      .searchDock { grid-template-columns: 1fr; }
+      .searchDock label { min-height: 44px; }
+      .mapHint { border-radius: 10px; align-items: flex-start; }
+      .mapTools { left: 18px; bottom: 158px; }
+      .sourceRail {
+        left: 18px;
+        right: 18px;
+        bottom: 22px;
+        grid-template-columns: 1fr 1fr;
+      }
+      .sourceRailItem { border-bottom: 1px solid var(--line); }
+      .sourceRailItem:nth-child(2) { border-right: 0; }
+      .sourceRailItem:nth-child(3), .sourceRailItem:nth-child(4) { border-bottom: 0; }
+      .sidePanel { padding: 24px 18px 30px; }
+      .metaGrid, .actionStack, .matrix { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr; }
+      .flowStep { border-right: 0; border-bottom: 1px solid var(--line); min-height: auto; }
+      .flowStep:last-child { border-bottom: 0; }
+      .band { padding: 62px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="topNav">
+    <a class="brand" href="#">
+      <span class="brandMark"><i data-lucide="sprout" class="icon"></i></span>
+      <span>Gruplan AI</span>
+    </a>
+    <div class="navCluster">
+      <span class="navPill" title="서비스 상태"><i data-lucide="server" class="icon"></i><strong id="serverState">서비스 준비</strong></span>
+      <span class="navPill" title="데이터 상태"><i data-lucide="database" class="icon"></i><span class="optional" id="dataState">데이터 확인</span></span>
+    </div>
+  </nav>
+
+  <main class="workspace">
+    <section class="mapStage" aria-label="필지 선택 지도">
+      <div id="map"></div>
+      <div class="mapShade"></div>
+      <div class="mapHeader">
+        <div class="eyebrow heroReveal"><i data-lucide="map-pin" class="icon"></i> Forest Parcel Intelligence</div>
+        <h1 class="heroReveal">내 산의 경영 방향을 필지 단위로 판단합니다</h1>
+        <p class="heroReveal">연속지적도와 산림공간정보, 산불 위험, 산악기상, 탄소상쇄, 산림사업법인 데이터를 한 번의 분석 흐름으로 연결합니다.</p>
+        <div class="searchDock heroReveal">
+          <label>
+            <i data-lucide="search" class="icon"></i>
+            <input id="addressInput" placeholder="지번 또는 주소 입력" autocomplete="off">
+          </label>
+          <button id="lookupBtn" class="primaryBtn" title="연속지적도 조회"><i data-lucide="scan-search" class="icon"></i>필지 확인</button>
+          <button id="locateBtn" class="ghostBtn" title="현재 위치로 이동"><i data-lucide="crosshair" class="icon"></i>위치</button>
+        </div>
+        <div class="mapHint heroReveal"><i data-lucide="mouse-pointer-click" class="icon"></i>지도를 확대하고 필지를 클릭하면 경계와 PNU를 바로 확인합니다</div>
+      </div>
+
+      <div class="mapTools" aria-label="지도 도구">
+        <button id="forestBtn" title="산림 레이어 상태"><i data-lucide="trees" class="icon"></i></button>
+        <button id="riskBtn" title="재난 위험 레이어 상태"><i data-lucide="triangle-alert" class="icon"></i></button>
+        <button id="roadBtn" title="임도 접근성 레이어 상태"><i data-lucide="route" class="icon"></i></button>
+        <button id="clearBtn" title="선택 초기화"><i data-lucide="rotate-ccw" class="icon"></i></button>
+      </div>
+
+      <div class="sourceRail" id="sourceRail">
+        <div class="sourceRailItem"><span>공공데이터</span><strong>12</strong></div>
+        <div class="sourceRailItem"><span>진단 방식</span><strong>공간결합</strong></div>
+        <div class="sourceRailItem"><span>보고서</span><strong>PDF</strong></div>
+        <div class="sourceRailItem"><span>지도</span><strong>선택형</strong></div>
+      </div>
+    </section>
+
+    <aside class="sidePanel">
+      <div class="panelHead">
+        <div>
+          <h2>산림 MRI 리포트</h2>
+          <p id="panelIntro">지도를 확대해 필지를 클릭하거나 지번을 조회하면 내 산의 상태와 경영 방향을 확인합니다.</p>
+        </div>
+        <span id="readinessDot" class="statusDot"></span>
+      </div>
+
+      <section class="panelBlock">
+        <div class="blockTitle"><i data-lucide="land-plot" class="icon"></i>선택 필지</div>
+        <div class="metaGrid">
+          <div class="metaItem"><small>PNU</small><strong id="pnuText">대기</strong></div>
+          <div class="metaItem"><small>좌표</small><strong id="coordText">대기</strong></div>
+          <div class="metaItem"><small>주소</small><strong id="addrText">확인 전</strong></div>
+          <div class="metaItem"><small>경계</small><strong id="geomText">확인 전</strong></div>
+        </div>
+      </section>
+
+      <section class="panelBlock">
+        <div class="blockTitle"><i data-lucide="workflow" class="icon"></i>분석 실행</div>
+        <div class="actionStack">
+          <button id="analysisBtn" class="primaryBtn fullAction"><i data-lucide="activity" class="icon"></i>공간분석 실행</button>
+          <button id="weatherBtn" class="quietBtn"><i data-lucide="cloud-sun" class="icon"></i>산악기상</button>
+          <button id="companyBtn" class="quietBtn"><i data-lucide="building-2" class="icon"></i>법인 후보</button>
+          <button id="reportBtn" class="quietBtn fullAction"><i data-lucide="file-down" class="icon"></i>계획서 PDF 생성</button>
+        </div>
+      </section>
+
+      <section class="panelBlock" id="resultBlock">
+        <div class="blockTitle"><i data-lucide="gauge" class="icon"></i>진단 점수</div>
+        <div id="resultView" class="notice">
+          <i data-lucide="info" class="icon"></i>
+          <span><strong>분석 대기</strong><br>필지를 선택하면 산림 상태와 경영 시나리오를 확인합니다.</span>
+        </div>
+      </section>
+
+      <section class="panelBlock">
+        <div class="blockTitle"><i data-lucide="list-checks" class="icon"></i>올해 작업</div>
+        <div id="taskList" class="taskList">
+          <div class="notice"><i data-lucide="clock" class="icon"></i><span>분석 완료 후 원천 데이터 근거가 붙은 작업표가 생성됩니다.</span></div>
+        </div>
+      </section>
+
+      <section class="panelBlock">
+        <div class="blockTitle"><i data-lucide="database-zap" class="icon"></i>데이터 출처</div>
+        <table class="sourceTable" id="sourceTable" aria-label="데이터 출처"></table>
+      </section>
+    </aside>
+  </main>
+
+  <section class="band">
+    <div class="bandInner">
+      <div class="sectionLabel reveal"><i data-lucide="git-branch" class="icon"></i>Data Pipeline</div>
+      <h2 class="reveal">12개 공공데이터가 하나의 필지 판단으로 이어집니다</h2>
+      <p class="lead reveal">필지 경계와 산림공간정보, 재난 위험, 기상, 탄소상쇄, 수행기관 정보를 함께 확인합니다. 결과마다 사용한 데이터와 판단 근거를 남깁니다.</p>
+      <div class="flow">
+        <div class="flowStep reveal">
+          <div class="stepNo">01</div>
+          <i data-lucide="landmark" class="icon"></i>
+          <h3>필지 확정</h3>
+          <p>주소, 지번, 확대 지도 클릭으로 연속지적도 PNU와 경계를 확인합니다.</p>
+        </div>
+        <div class="flowStep reveal">
+          <div class="stepNo">02</div>
+          <i data-lucide="layers-3" class="icon"></i>
+          <h3>공간 교차</h3>
+          <p>임상도, 토양도, 조림지도, 임도망도, 경제림구역을 필지와 교차합니다.</p>
+        </div>
+        <div class="flowStep reveal">
+          <div class="stepNo">03</div>
+          <i data-lucide="radar" class="icon"></i>
+          <h3>위험 반영</h3>
+          <p>산사태위험지도, 산불위험예보, 산악기상정보로 작업 위험을 계산합니다.</p>
+        </div>
+        <div class="flowStep reveal">
+          <div class="stepNo">04</div>
+          <i data-lucide="calculator" class="icon"></i>
+          <h3>점수화</h3>
+          <p>접근성, 재난위험, 수익성, 탄소성, 보전성을 같은 기준으로 비교합니다.</p>
+        </div>
+        <div class="flowStep reveal">
+          <div class="stepNo">05</div>
+          <i data-lucide="file-text" class="icon"></i>
+          <h3>문서 생성</h3>
+          <p>진단 결과와 근거만 사용해 계획서 초안과 상담 요청서를 만듭니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band darkBand">
+    <div class="bandInner">
+      <div class="sectionLabel reveal"><i data-lucide="shield-check" class="icon"></i>Forest Decision</div>
+      <h2 class="reveal">산주와 현장 담당자가 바로 쓰는 의사결정 도구</h2>
+      <p class="lead reveal">흩어진 산림 정보를 한 화면에서 읽고, 올해 무엇을 확인해야 하는지까지 이어줍니다. 상담 전 준비 자료와 계획서 초안도 함께 만듭니다.</p>
+      <div class="matrix">
+        <table class="plainTable reveal">
+          <thead><tr><th>사용 장면</th><th>제공 내용</th></tr></thead>
+          <tbody>
+            <tr><td>내 산 이해</td><td>수종, 영급, 경사, 토양, 임도 접근성, 재난 위험을 필지 기준으로 정리</td></tr>
+            <tr><td>경영 방향 선택</td><td>수익형, 탄소형, 보전형, 재난저감형 시나리오를 같은 기준으로 비교</td></tr>
+            <tr><td>상담 준비</td><td>올해 작업 체크리스트와 산림사업법인 상담 후보를 함께 제공</td></tr>
+          </tbody>
+        </table>
+        <table class="plainTable reveal">
+          <thead><tr><th>운영 원칙</th><th>서비스 기준</th></tr></thead>
+          <tbody>
+            <tr><td>근거 표시</td><td>추천 결과마다 사용 데이터와 판단 기준을 함께 보여줍니다</td></tr>
+            <tr><td>개인정보 최소화</td><td>소유자명과 주민등록번호 없이 위치와 필지 정보만으로 진단합니다</td></tr>
+            <tr><td>전문가 검토</td><td>계획서 초안은 상담과 공식 제출 전 검토가 필요한 참고 자료로 제공합니다</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <strong>Gruplan AI</strong> 산림자산 진단과 경영계획 준비를 돕는 데이터 기반 서비스입니다. 행정 제출 전에는 산림기술자 또는 담당 기관의 검토가 필요합니다.
+  </footer>
+
+  <script>
+    const apiBase = (() => {
+      const saved = localStorage.getItem("gruplanApiBase");
+      if (saved) return saved.replace(/\/$/, "");
+      if (location.protocol.startsWith("http")) return location.origin;
+      return "http://localhost:8000";
+    })();
+
+    const state = {
+      marker: null,
+      parcelLayer: null,
+      selectedFeature: null,
+      analysis: null,
+      sources: []
+    };
+
+    const map = L.map("map", { zoomControl: false, preferCanvas: true }).setView([36.52, 127.85], 7);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+    L.control.zoom({ position: "bottomleft" }).addTo(map);
+
+    const forestIcon = L.divIcon({
+      className: "",
+      html: '<div style="width:24px;height:24px;border-radius:50%;background:#1f4b2a;border:3px solid white;box-shadow:0 8px 22px rgba(0,0,0,.25)"></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    document.getElementById("lookupBtn").addEventListener("click", lookupByAddress);
+    document.getElementById("addressInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") lookupByAddress();
+    });
+    document.getElementById("locateBtn").addEventListener("click", locateUser);
+    document.getElementById("analysisBtn").addEventListener("click", runAnalysis);
+    document.getElementById("reportBtn").addEventListener("click", downloadReport);
+    document.getElementById("weatherBtn").addEventListener("click", loadWeather);
+    document.getElementById("companyBtn").addEventListener("click", loadCompanies);
+    document.getElementById("clearBtn").addEventListener("click", clearSelection);
+
+    map.on("click", async (event) => {
+      setMarker(event.latlng.lat, event.latlng.lng);
+      setParcelMeta({ coord: `${event.latlng.lat.toFixed(5)}, ${event.latlng.lng.toFixed(5)}` });
+      await lookupByPoint(event.latlng.lat, event.latlng.lng);
+    });
+
+    function icon(name, extra = "") {
+      return `<i data-lucide="${name}" class="icon ${extra}"></i>`;
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(`${apiBase}${path}`, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options
+      });
+      const type = response.headers.get("content-type") || "";
+      if (!response.ok) {
+        let detail = response.statusText;
+        if (type.includes("application/json")) {
+          const body = await response.json();
+          detail = body.detail || body;
+        }
+        throw detail;
+      }
+      if (type.includes("application/pdf")) return response.blob();
+      return response.json();
+    }
+
+    async function loadHealth() {
+      try {
+        const health = await api("/api/health");
+        document.getElementById("serverState").textContent = "서비스 연결";
+        document.getElementById("readinessDot").classList.toggle("ready", health.database.connected);
+        const keys = health.keys.DATA_GO_KR_SERVICE_KEY && health.keys.VWORLD_API_KEY;
+        document.getElementById("dataState").textContent = keys ? "데이터 사용 가능" : "데이터 준비 중";
+      } catch (error) {
+        document.getElementById("serverState").textContent = "서비스 준비 중";
+        document.getElementById("dataState").textContent = "데이터 준비 중";
+        renderNotice("resultView", "server-off", "서비스를 준비하고 있습니다.", "잠시 후 다시 확인해주세요.");
+      }
+    }
+
+    async function loadSources() {
+      try {
+        const payload = await api("/api/data-sources");
+        state.sources = payload.items || [];
+        renderSources();
+      } catch (error) {
+        renderNotice("sourceTable", "circle-alert", "데이터 출처를 불러오지 못했습니다.", "잠시 후 다시 확인해주세요.", true);
+      }
+    }
+
+    function renderSources() {
+      const table = document.getElementById("sourceTable");
+      table.innerHTML = state.sources.map((source) => {
+        const cls = source.status.includes("필요") ? "need" : source.status.includes("적재") ? "" : "missing";
+        const iconName = cls === "" ? "check-circle-2" : cls === "need" ? "key-round" : "circle-alert";
+        const displayStatus = source.status.includes("완료") || source.status.includes("연결")
+          ? "사용 가능"
+          : source.status.includes("필요")
+            ? "준비 중"
+            : "확인 중";
+        return `
+          <tr>
+            <td>${source.id}</td>
+            <td>
+              <div class="sourceName">${source.name}</div>
+              <div class="sourceUse">${source.usage}</div>
+            </td>
+            <td><span class="statusBadge ${cls}">${icon(iconName)}${displayStatus}</span></td>
+          </tr>
+        `;
+      }).join("");
+      updateRail();
+      lucide.createIcons();
+    }
+
+    function updateRail() {
+      const total = state.sources.length || 12;
+      const ready = state.sources.filter((source) => source.status.includes("연결") || source.status.includes("완료")).length;
+      const need = state.sources.filter((source) => source.status.includes("필요")).length;
+      const spatial = state.sources.filter((source) => source.table_name && source.status.includes("적재 완료")).length;
+      document.getElementById("sourceRail").innerHTML = `
+        <div class="sourceRailItem"><span>데이터 출처</span><strong>${total}</strong></div>
+        <div class="sourceRailItem"><span>사용 가능</span><strong>${ready}</strong></div>
+        <div class="sourceRailItem"><span>지도 분석</span><strong>${spatial}</strong></div>
+        <div class="sourceRailItem"><span>준비 중</span><strong>${need}</strong></div>
+      `;
+    }
+
+    async function lookupByAddress() {
+      const query = document.getElementById("addressInput").value.trim();
+      if (!query) return;
+      renderNotice("resultView", "loader", "필지 위치를 찾고 있습니다.", "주소와 지번을 기준으로 지도 경계를 확인합니다.");
+      try {
+        const data = await api("/api/parcels/lookup", {
+          method: "POST",
+          body: JSON.stringify({ query })
+        });
+        handleParcelResponse(data);
+      } catch (error) {
+        showApiError(error, "D12");
+      }
+    }
+
+    async function lookupByPoint(lat, lon) {
+      renderNotice("resultView", "loader", "클릭한 위치의 필지를 찾고 있습니다.", "지도 경계와 필지 번호를 확인합니다.");
+      try {
+        const data = await api("/api/parcels/lookup", {
+          method: "POST",
+          body: JSON.stringify({ lat, lon })
+        });
+        handleParcelResponse(data);
+      } catch (error) {
+        showApiError(error, "D12");
+      }
+    }
+
+    function handleParcelResponse(data) {
+      const feature = extractFeature(data);
+      if (!feature) {
+        renderNotice("resultView", "circle-alert", "필지 경계를 찾지 못했습니다.", "조회 결과에 GeoJSON 경계가 없습니다.");
+        return;
+      }
+      state.selectedFeature = feature;
+      drawParcel(feature);
+      const props = feature.properties || {};
+      setParcelMeta({
+        pnu: props.pnu || props.PNU || props.gid || "확인 필요",
+        address: props.addr || props.address || props.jibun || props.JIBUN || "공공데이터 속성 확인 필요",
+        geom: feature.geometry ? feature.geometry.type : "확인 필요"
+      });
+      renderNotice("resultView", "check-circle-2", "필지 경계를 확인했습니다.", "이제 산림자산 진단을 실행할 수 있습니다.");
+    }
+
+    function extractFeature(data) {
+      if (data?.cadastral) return extractFeature(data.cadastral);
+      if (data?.response?.result?.featureCollection?.features?.length) {
+        return data.response.result.featureCollection.features[0];
+      }
+      if (data?.features?.length) return data.features[0];
+      if (data?.feature) return data.feature;
+      return null;
+    }
+
+    function drawParcel(feature) {
+      if (state.parcelLayer) state.parcelLayer.remove();
+      state.parcelLayer = L.geoJSON(feature, {
+        style: {
+          color: "#1f4b2a",
+          weight: 3,
+          fillColor: "#6aa84f",
+          fillOpacity: .24
+        }
+      }).addTo(map);
+      map.fitBounds(state.parcelLayer.getBounds(), { padding: [40, 40] });
+    }
+
+    async function runAnalysis() {
+      if (!state.selectedFeature) {
+        renderNotice("resultView", "circle-alert", "필지 경계가 필요합니다.", "지번을 조회하거나 지도에서 필지를 선택하세요.");
+        return;
+      }
+      const pnu = getPnu(state.selectedFeature);
+      renderNotice("resultView", "loader", "산림자산을 분석하고 있습니다.", "필지와 겹치는 지형, 임상, 위험 정보를 확인합니다.");
+      try {
+        const payload = await api("/api/analysis", {
+          method: "POST",
+          body: JSON.stringify({ pnu, geometry: state.selectedFeature.geometry })
+        });
+        state.analysis = payload;
+        renderAnalysis(payload);
+      } catch (error) {
+        if (error?.missingSources) {
+          renderMissingSources(error);
+        } else {
+          showApiError(error);
+        }
+      }
+    }
+
+    function getPnu(feature) {
+      const props = feature.properties || {};
+      return props.pnu || props.PNU || props.gid || null;
+    }
+
+    function renderAnalysis(payload) {
+      const scores = payload.scores || {};
+      const labels = [
+        ["accessibility", "접근성", "#3d7f54"],
+        ["disasterRisk", "재난위험", "#be4b3f"],
+        ["profit", "수익형", "#356f94"],
+        ["carbon", "탄소형", "#6aa84f"],
+        ["conservation", "보전형", "#7d6aa8"],
+        ["resilience", "재난저감", "#bd8335"]
+      ];
+      document.getElementById("resultView").className = "scoreRows";
+      document.getElementById("resultView").innerHTML = labels.map(([key, label, color]) => {
+        const value = Math.round(scores[key] ?? 0);
+        return `
+          <div class="scoreRow">
+            <span>${label}</span>
+            <span class="scoreTrack"><span class="scoreFill" style="width:${value}%;background:${color}"></span></span>
+            <span class="scoreValue">${value}</span>
+          </div>
+        `;
+      }).join("") + `<div class="notice">${icon("badge-check")}<span><strong>${scores.recommendedScenario || "추천 확인 필요"}</strong><br>원천 데이터 기준으로 가장 우선 검토할 경영 방향입니다.</span></div>`;
+
+      const tasks = payload.workPlan || [];
+      document.getElementById("taskList").innerHTML = tasks.map((task) => `
+        <div class="taskItem">
+          <span class="taskIcon">${icon("check")}</span>
+          <div><strong>${task.title}</strong><span>${task.reason} · ${task.season}</span></div>
+        </div>
+      `).join("");
+      lucide.createIcons();
+    }
+
+    function renderMissingSources(error) {
+      const rows = error.missingSources.map((source) => `<tr><td>${source.id}</td><td>${source.name}</td><td>준비 중</td></tr>`).join("");
+      document.getElementById("resultView").className = "";
+      document.getElementById("resultView").innerHTML = `
+        <div class="notice">${icon("database-backup")}<span><strong>진단 데이터 준비 중</strong><br>일부 지역 데이터가 아직 연결되지 않았습니다. 연결된 데이터부터 순차적으로 진단합니다.</span></div>
+        <table class="plainTable" style="margin-top:14px;font-size:12px">
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+      lucide.createIcons();
+    }
+
+    async function downloadReport() {
+      if (!state.analysis) {
+        renderNotice("resultView", "file-warning", "분석 결과가 먼저 필요합니다.", "실제 분석 결과 없이 보고서를 만들지 않습니다.");
+        return;
+      }
+      try {
+        const blob = await api("/api/reports/plan", {
+          method: "POST",
+          body: JSON.stringify({ analysis: state.analysis })
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "gruplan-forest-plan.pdf";
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        showApiError(error);
+      }
+    }
+
+    async function loadWeather() {
+      renderNotice("resultView", "cloud-sun", "산악기상을 확인하고 있습니다.", "가까운 관측 정보를 기준으로 작업 위험을 살핍니다.");
+      try {
+        const data = await api("/api/live/mountain-weather");
+        renderNotice("resultView", "cloud-sun", "산악기상 정보를 확인했습니다.", JSON.stringify(data).slice(0, 240));
+      } catch (error) {
+        showApiError(error, "D7");
+      }
+    }
+
+    async function loadCompanies() {
+      renderNotice("resultView", "building-2", "수행업체 후보를 찾고 있습니다.", "지역과 작업 종류를 기준으로 상담 후보를 확인합니다.");
+      try {
+        const data = await api("/api/forest-companies");
+        renderNotice("resultView", "building-2", "수행업체 후보를 확인했습니다.", JSON.stringify(data).slice(0, 240));
+      } catch (error) {
+        showApiError(error, "D10");
+      }
+    }
+
+    function locateUser() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        map.setView([lat, lon], 15);
+        setMarker(lat, lon);
+        lookupByPoint(lat, lon);
+      });
+    }
+
+    function setMarker(lat, lon) {
+      if (state.marker) state.marker.setLatLng([lat, lon]);
+      else state.marker = L.marker([lat, lon], { icon: forestIcon }).addTo(map);
+      setParcelMeta({ coord: `${lat.toFixed(5)}, ${lon.toFixed(5)}` });
+    }
+
+    function setParcelMeta({ pnu, coord, address, geom }) {
+      if (pnu) document.getElementById("pnuText").textContent = pnu;
+      if (coord) document.getElementById("coordText").textContent = coord;
+      if (address) document.getElementById("addrText").textContent = address;
+      if (geom) document.getElementById("geomText").textContent = geom;
+    }
+
+    function clearSelection() {
+      if (state.marker) state.marker.remove();
+      if (state.parcelLayer) state.parcelLayer.remove();
+      state.marker = null;
+      state.parcelLayer = null;
+      state.selectedFeature = null;
+      state.analysis = null;
+      document.getElementById("pnuText").textContent = "대기";
+      document.getElementById("coordText").textContent = "대기";
+      document.getElementById("addrText").textContent = "확인 전";
+      document.getElementById("geomText").textContent = "확인 전";
+      renderNotice("resultView", "info", "선택이 초기화되었습니다.", "새 필지를 조회할 수 있습니다.");
+    }
+
+    function showApiError(error, sourceId) {
+      const id = sourceId || error?.sourceId || error?.detail?.sourceId || "";
+      renderNotice("resultView", "circle-alert", id ? `${id} 데이터 준비 중` : "데이터 준비 중", "해당 데이터가 연결되면 바로 진단에 반영됩니다.");
+    }
+
+    function renderNotice(targetId, iconName, title, detail, tableMode = false) {
+      const target = document.getElementById(targetId);
+      if (tableMode) {
+        target.innerHTML = `<tr><td></td><td>${title}</td><td>${String(detail || "")}</td></tr>`;
+        return;
+      }
+      target.className = "notice";
+      target.innerHTML = `${icon(iconName)}<span><strong>${title}</strong><br>${typeof detail === "object" ? JSON.stringify(detail) : detail}</span>`;
+      lucide.createIcons();
+    }
+
+    function initScrollReveal() {
+      const targets = document.querySelectorAll(".reveal");
+      if (!("IntersectionObserver" in window)) {
+        targets.forEach((target) => target.classList.add("isVisible"));
+        return;
+      }
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("isVisible");
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: .18, rootMargin: "0px 0px -8% 0px" });
+      targets.forEach((target) => observer.observe(target));
+    }
+
+    loadHealth();
+    loadSources();
+    initScrollReveal();
+    lucide.createIcons();
+  </script>
+</body>
+</html>
