@@ -2,6 +2,8 @@
 
 산림 공공데이터를 필지 단위 의사결정으로 연결하는 산림자산 경영 플랫폼입니다. 지번이나 지도 클릭으로 필지를 선택하고, 산림 상태 진단, 경영 시나리오, 작업 체크리스트, 산림경영계획서 초안을 확인할 수 있습니다.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/joonghui0926/GruPlan)
+
 ## 실행
 
 ```powershell
