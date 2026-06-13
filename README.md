@@ -24,7 +24,9 @@ Set-Location backend
 
 ## 데이터 연결
 
-분석 결과는 연결된 공공데이터를 기준으로 생성됩니다. `DATA_GO_KR_SERVICE_KEY`, `VWORLD_API_KEY`, `DATABASE_URL`을 설정하고 원본 공간데이터를 적재하면 필지 분석 흐름이 활성화됩니다. 보고서 문장 생성에는 `OPENAI_API_KEY`를 사용할 수 있으며, 기본 모델은 비용과 품질 균형을 고려해 `gpt-5.4-mini`로 설정되어 있습니다.
+분석 결과는 연결된 공공데이터를 기준으로 생성됩니다. Render Blueprint로 배포하면 `gruplan-db` Postgres가 함께 만들어지고 `DATABASE_URL`이 서비스에 자동 연결됩니다. 앱 시작 시 PostGIS 확장, 분석 테이블, 공공데이터 출처 목록을 자동으로 생성합니다. 보고서 문장 생성에는 `OPENAI_API_KEY`를 사용할 수 있으며, 기본 모델은 비용과 품질 균형을 고려해 `gpt-5.4-mini`로 설정되어 있습니다.
+
+이미 수동 Web Service를 만든 경우에는 Render Dashboard에서 Blueprint로 다시 만들거나, Postgres를 하나 만든 뒤 Web Service 환경변수에 `DATABASE_URL`을 직접 추가합니다.
 
 공간데이터 적재 예시는 아래와 같습니다.
 
@@ -44,6 +46,7 @@ python backend/scripts/sync_public_sources.py --database-url $env:DATABASE_URL
 Render Web Service에는 아래 값을 넣습니다. 키 값은 저장소에 넣지 않고 Render 환경변수에만 저장합니다.
 
 ```text
+DATABASE_URL=Render Postgres connectionString
 DATA_GO_KR_SERVICE_KEY=공공데이터포털 Decoding 인증키
 VWORLD_API_KEY=VWorld 운영 인증키
 OPENAI_API_KEY=OpenAI Project API Key

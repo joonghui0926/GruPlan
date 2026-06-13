@@ -90,10 +90,10 @@ async def data_sources():
     for source in PUBLIC_DATA_SOURCES:
         status = "연결 가능"
         if source.table_name:
-            status = "적재 완료" if source.table_name in loaded_tables else "원본 적재 필요"
+            status = "공간 DB 연결" if source.table_name in loaded_tables else "스키마 확인 필요"
         if source.requires_key:
             key_ready = configured_keys["vworld"] if source.id == "D12" else configured_keys["data"]
-            status = "API 키 필요" if not key_ready else status
+            status = "API 키 확인 필요" if not key_ready else status
         item = source.to_dict()
         item["status"] = status
         items.append(item)
@@ -245,9 +245,13 @@ async def _query_spatial_features(payload: AnalysisRequest):
       from parcels
       where ($1::text is not null and pnu = $1)
       union all
-      select null::text as pnu, null::text as address, null::text as admin_name,
+      select $1::text as pnu, null::text as address, null::text as admin_name,
              ST_SetSRID(ST_GeomFromGeoJSON($2), 4326) as geom
-      where $1::text is null and $2::text is not null
+      where $2::text is not null
+        and not exists (
+          select 1 from parcels
+          where $1::text is not null and pnu = $1
+        )
       limit 1
     ),
     area_calc as (
