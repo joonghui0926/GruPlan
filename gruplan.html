@@ -505,7 +505,7 @@
       width: 0;
       height: 100%;
       border-radius: inherit;
-      background: var(--pine);
+      background: var(--forest);
       transition: width .5s ease;
     }
     .scoreValue {
@@ -938,14 +938,14 @@
       font-size: 13px;
     }
     .radarLegend div {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 88px minmax(120px, 1fr) 46px;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
       border-bottom: 1px solid var(--line);
       padding-bottom: 7px;
     }
-    .radarLegend span {
+    .radarLegendLabel {
       display: inline-flex;
       align-items: center;
       gap: 8px;
@@ -957,10 +957,23 @@
       display: inline-block;
       border-radius: 999px;
     }
+    .radarLegendTrack {
+      height: 8px;
+      border-radius: 999px;
+      background: #dbe4d6;
+      overflow: hidden;
+    }
+    .radarLegendFill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--forest);
+    }
     .radarLegend div:last-child { border-bottom: 0; }
     .radarLegend strong {
       color: var(--ink);
       font-family: "Space Grotesk", sans-serif;
+      text-align: center;
     }
     .modalScoreRow {
       display: grid;
@@ -2004,7 +2017,7 @@
         return `
           <div class="scoreRow">
             <span>${label}</span>
-            <span class="scoreTrack"><span class="scoreFill" style="width:${value}%;background:${color}"></span></span>
+            <span class="scoreTrack"><span class="scoreFill" style="width:${value}%"></span></span>
             <span class="scoreValue">${value}</span>
           </div>
         `;
@@ -2187,11 +2200,12 @@
     }
 
     function renderRadarLegend(scores) {
-      return scoreLabels().map(([key, label, color]) => {
+      return scoreLabels().map(([key, label]) => {
         const value = Math.round(scores[key] ?? 0);
         return `
           <div>
-            <span><i style="background:${color}"></i>${label}</span>
+            <span class="radarLegendLabel">${label}</span>
+            <span class="radarLegendTrack"><span class="radarLegendFill" style="width:${value}%"></span></span>
             <strong>${value}</strong>
           </div>
         `;
