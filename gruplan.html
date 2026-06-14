@@ -220,6 +220,10 @@
       font-weight: 700;
     }
     .primaryBtn:hover { background: #276138; transform: translateY(-1px); }
+    .primaryBtn.isBusy, .quietBtn.isBusy, .ghostBtn.isBusy {
+      pointer-events: none;
+      opacity: .72;
+    }
     .ghostBtn {
       padding: 0 15px;
       background: #ecf4e8;
@@ -247,13 +251,19 @@
       backdrop-filter: blur(12px);
     }
     .mapTools button {
-      width: 46px;
+      width: auto;
+      min-width: 72px;
       height: 44px;
-      display: grid;
-      place-items: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 12px;
       color: rgba(255,255,255,.78);
       background: transparent;
       border-right: 1px solid rgba(255,255,255,.12);
+      font-size: 12px;
+      font-weight: 800;
     }
     .mapTools button:last-child { border-right: 0; }
     .mapTools button:hover, .mapTools button.active {
@@ -463,7 +473,10 @@
       transition: width .5s ease;
     }
     .scoreValue {
-      text-align: right;
+      min-width: 44px;
+      min-height: 28px;
+      display: grid;
+      place-items: center;
       color: var(--ink);
       font-family: "Space Grotesk", sans-serif;
       font-weight: 700;
@@ -505,13 +518,16 @@
       align-items: start;
     }
     .taskIcon {
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       display: grid;
       place-items: center;
       border-radius: 8px;
       background: #e4efdf;
       color: var(--pine);
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 800;
+      line-height: 1;
     }
     .taskItem strong {
       display: block;
@@ -656,6 +672,316 @@
       color: var(--ink);
       font-weight: 800;
     }
+    .analysisModal {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background: rgba(10,22,13,.64);
+      backdrop-filter: blur(10px);
+    }
+    .analysisModal[hidden] { display: none; }
+    .analysisWindow {
+      width: min(1180px, 100%);
+      max-height: calc(100vh - 56px);
+      overflow: auto;
+      background: var(--paper);
+      border: 1px solid rgba(255,255,255,.5);
+      border-radius: 10px;
+      box-shadow: 0 28px 86px rgba(0,0,0,.34);
+    }
+    .analysisTop {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 24px 28px 18px;
+      background: rgba(247,250,245,.96);
+      border-bottom: 1px solid var(--line);
+    }
+    .analysisTop h2 {
+      margin: 0;
+      font-size: 25px;
+      line-height: 1.2;
+    }
+    .analysisTop p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .closeBtn {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      color: var(--forest);
+      background: #e7efe3;
+    }
+    .analysisSteps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-bottom: 1px solid var(--line);
+    }
+    .analysisStep {
+      min-height: 74px;
+      padding: 14px 18px;
+      border-right: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .analysisStep:last-child { border-right: 0; }
+    .analysisStep strong {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--ink);
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+    .analysisStep.isActive { background: #edf7e9; }
+    .analysisStep.isDone strong { color: var(--ok); }
+    .analysisBody { padding: 28px; }
+    .analysisGrid {
+      display: grid;
+      grid-template-columns: minmax(260px, .86fr) minmax(360px, 1.14fr);
+      gap: 30px;
+      align-items: start;
+    }
+    .decisionBlock {
+      padding: 18px 0 18px 18px;
+      border-left: 5px solid var(--pine);
+      background: linear-gradient(90deg, rgba(106,168,79,.15), rgba(106,168,79,0));
+    }
+    .decisionBlock small {
+      display: block;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .decisionBlock strong {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--forest);
+      font-size: 28px;
+      line-height: 1.2;
+    }
+    .decisionBlock p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .impactGrid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin-top: 22px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .impactCell {
+      min-height: 86px;
+      padding: 15px 14px;
+      border-right: 1px solid var(--line);
+    }
+    .impactCell:last-child { border-right: 0; }
+    .impactCell small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .impactCell strong {
+      display: block;
+      color: var(--ink);
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 25px;
+      line-height: 1.1;
+    }
+    .insightList, .actionTimeline {
+      display: grid;
+      border-top: 1px solid var(--line);
+    }
+    .insightItem, .timelineItem {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 12px;
+      padding: 15px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .insightItem:last-child, .timelineItem:last-child { border-bottom: 0; }
+    .insightIcon, .timelineNo {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: #e4efdf;
+      color: var(--pine);
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 800;
+    }
+    .insightItem strong, .timelineItem strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 3px;
+    }
+    .insightItem span, .timelineItem span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .modalSectionTitle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 28px 0 12px;
+      color: var(--forest);
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .scorePanel {
+      display: grid;
+      gap: 13px;
+      padding-top: 4px;
+    }
+    .radarPanel {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 22px;
+      align-items: center;
+      padding: 16px 0 20px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .radarPanel svg {
+      width: 220px;
+      height: 220px;
+      display: block;
+    }
+    .radarLegend {
+      display: grid;
+      gap: 9px;
+      font-size: 13px;
+    }
+    .radarLegend div {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 7px;
+    }
+    .radarLegend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+    }
+    .radarLegend i {
+      width: 10px;
+      height: 10px;
+      display: inline-block;
+      border-radius: 999px;
+    }
+    .radarLegend div:last-child { border-bottom: 0; }
+    .radarLegend strong {
+      color: var(--ink);
+      font-family: "Space Grotesk", sans-serif;
+    }
+    .modalScoreRow {
+      display: grid;
+      grid-template-columns: 90px 1fr 52px;
+      gap: 12px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .modalScoreRow strong {
+      min-height: 32px;
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 17px;
+    }
+    .modalScoreTrack {
+      height: 12px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #dfe8da;
+    }
+    .modalScoreFill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+    }
+    .loadingPane {
+      min-height: 260px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+    }
+    .loadingPulse {
+      width: 54px;
+      height: 54px;
+      margin: 0 auto 18px;
+      border-radius: 999px;
+      border: 4px solid #dfe8da;
+      border-top-color: var(--pine);
+      animation: spin .8s linear infinite;
+    }
+    .reportTable {
+      width: 100%;
+      border-collapse: collapse;
+      border-top: 2px solid var(--forest);
+      font-size: 13px;
+    }
+    .reportTable th, .reportTable td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    .reportTable th {
+      color: var(--forest);
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .reportTable td strong {
+      color: var(--ink);
+    }
+    .qualityLine {
+      display: grid;
+      grid-template-columns: 120px 1fr 54px;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .qualityLine:last-child { border-bottom: 0; }
+    .qualityTrack {
+      height: 9px;
+      border-radius: 999px;
+      background: #dfe8da;
+      overflow: hidden;
+    }
+    .qualityFill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--pine);
+    }
+    .wideReport {
+      margin-top: 30px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .darkBand {
       background: var(--forest);
       color: var(--white);
@@ -749,6 +1075,8 @@
       .searchDock label { min-height: 44px; }
       .mapHint { border-radius: 10px; align-items: flex-start; }
       .mapTools { left: 18px; bottom: 158px; }
+      .mapTools button { min-width: 48px; padding: 0 10px; }
+      .mapTools .toolText { display: none; }
       .sourceRail {
         left: 18px;
         right: 18px;
@@ -760,6 +1088,14 @@
       .sourceRailItem:nth-child(3), .sourceRailItem:nth-child(4) { border-bottom: 0; }
       .sidePanel { padding: 24px 18px 30px; }
       .metaGrid, .actionStack, .matrix { grid-template-columns: 1fr; }
+      .analysisModal { padding: 12px; }
+      .analysisTop { padding: 18px 18px 14px; }
+      .analysisSteps, .analysisGrid, .impactGrid { grid-template-columns: 1fr; }
+      .radarPanel { grid-template-columns: 1fr; }
+      .radarPanel svg { margin: 0 auto; }
+      .analysisStep, .impactCell { border-right: 0; border-bottom: 1px solid var(--line); }
+      .impactCell:last-child { border-bottom: 0; }
+      .analysisBody { padding: 20px 18px; }
       .flow { grid-template-columns: 1fr; }
       .flowStep { border-right: 0; border-bottom: 1px solid var(--line); min-height: auto; }
       .flowStep:last-child { border-bottom: 0; }
@@ -799,10 +1135,10 @@
       </div>
 
       <div class="mapTools" aria-label="지도 도구">
-        <button id="forestBtn" title="산림 레이어 상태"><i data-lucide="trees" class="icon"></i></button>
-        <button id="riskBtn" title="재난 위험 레이어 상태"><i data-lucide="triangle-alert" class="icon"></i></button>
-        <button id="roadBtn" title="임도 접근성 레이어 상태"><i data-lucide="route" class="icon"></i></button>
-        <button id="clearBtn" title="선택 초기화"><i data-lucide="rotate-ccw" class="icon"></i></button>
+        <button id="forestBtn" title="산림공간정보"><i data-lucide="trees" class="icon"></i><span class="toolText">산림</span></button>
+        <button id="riskBtn" title="재난위험"><i data-lucide="triangle-alert" class="icon"></i><span class="toolText">위험</span></button>
+        <button id="roadBtn" title="임도 접근성"><i data-lucide="route" class="icon"></i><span class="toolText">임도</span></button>
+        <button id="clearBtn" title="선택 초기화"><i data-lucide="rotate-ccw" class="icon"></i><span class="toolText">초기화</span></button>
       </div>
 
       <div class="sourceRail" id="sourceRail">
@@ -873,6 +1209,25 @@
       </section>
     </aside>
   </main>
+
+  <section id="analysisModal" class="analysisModal" hidden aria-label="분석 리포트 창">
+    <div class="analysisWindow">
+      <div class="analysisTop">
+        <div>
+          <h2 id="analysisModalTitle">산림자산 분석</h2>
+          <p id="analysisModalSub">선택한 필지의 공간 데이터와 현장 정보를 함께 확인합니다.</p>
+        </div>
+        <button id="analysisCloseBtn" class="closeBtn" title="닫기"><i data-lucide="x" class="icon"></i></button>
+      </div>
+      <div class="analysisSteps" id="analysisSteps">
+        <div class="analysisStep" data-step="0"><strong><i data-lucide="land-plot" class="icon"></i>필지 확정</strong><span>경계와 PNU 확인</span></div>
+        <div class="analysisStep" data-step="1"><strong><i data-lucide="layers-3" class="icon"></i>공간 교차</strong><span>산림공간정보 결합</span></div>
+        <div class="analysisStep" data-step="2"><strong><i data-lucide="brain-circuit" class="icon"></i>방향 판단</strong><span>시나리오 점수화</span></div>
+        <div class="analysisStep" data-step="3"><strong><i data-lucide="list-checks" class="icon"></i>실행 정리</strong><span>작업과 근거 구성</span></div>
+      </div>
+      <div id="analysisModalBody" class="analysisBody"></div>
+    </div>
+  </section>
 
   <section class="band">
     <div class="bandInner">
@@ -990,6 +1345,10 @@
     document.getElementById("forestBtn").addEventListener("click", () => showSourceFocus(["D1", "D2", "D3", "D8"], "산림공간정보"));
     document.getElementById("riskBtn").addEventListener("click", loadFireRisk);
     document.getElementById("roadBtn").addEventListener("click", showRoadSummary);
+    document.getElementById("analysisCloseBtn").addEventListener("click", closeAnalysisModal);
+    document.getElementById("analysisModal").addEventListener("click", (event) => {
+      if (event.target.id === "analysisModal") closeAnalysisModal();
+    });
 
     map.on("click", async (event) => {
       setMarker(event.latlng.lat, event.latlng.lng);
@@ -999,6 +1358,49 @@
 
     function icon(name, extra = "") {
       return `<i data-lucide="${name}" class="icon ${extra}"></i>`;
+    }
+
+    function openAnalysisModal(title = "산림자산 분석", subtitle = "선택한 필지의 공간 데이터와 현장 정보를 함께 확인합니다.") {
+      document.getElementById("analysisModalTitle").textContent = title;
+      document.getElementById("analysisModalSub").textContent = subtitle;
+      document.getElementById("analysisModal").hidden = false;
+      document.body.style.overflow = "hidden";
+      lucide.createIcons();
+    }
+
+    function closeAnalysisModal() {
+      document.getElementById("analysisModal").hidden = true;
+      document.body.style.overflow = "";
+    }
+
+    function setAnalysisStep(index) {
+      document.querySelectorAll(".analysisStep").forEach((step) => {
+        const stepIndex = Number(step.dataset.step);
+        step.classList.toggle("isDone", stepIndex < index);
+        step.classList.toggle("isActive", stepIndex === index);
+      });
+    }
+
+    function renderModalLoading(title, detail) {
+      document.getElementById("analysisModalBody").innerHTML = `
+        <div class="loadingPane">
+          <div>
+            <div class="loadingPulse"></div>
+            <strong>${title}</strong>
+            <p>${detail}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function setButtonBusy(buttonId, busy, busyText) {
+      const button = document.getElementById(buttonId);
+      if (!button) return;
+      if (!button.dataset.defaultHtml) button.dataset.defaultHtml = button.innerHTML;
+      button.classList.toggle("isBusy", busy);
+      if (busy) button.innerHTML = `${icon("loader")} ${busyText}`;
+      else button.innerHTML = button.dataset.defaultHtml;
+      lucide.createIcons();
     }
 
     async function api(path, options = {}) {
@@ -1265,6 +1667,15 @@
         return;
       }
       const pnu = getPnu(state.selectedFeature);
+      openAnalysisModal("공간분석 실행", "필지 경계와 공공데이터를 교차해 경영 방향을 계산합니다.");
+      setAnalysisStep(1);
+      renderModalLoading("AI 분석 준비", "필지 경계, 면적, 산림공간정보, 재난 지표를 결합하고 있습니다.");
+      setButtonBusy("analysisBtn", true, "분석 중");
+      const timers = [
+        window.setTimeout(() => setAnalysisStep(2), 700),
+        window.setTimeout(() => renderModalLoading("경영 방향 계산", "수익형, 탄소형, 보전형, 재난저감형 점수를 비교하고 있습니다."), 900),
+        window.setTimeout(() => setAnalysisStep(3), 1500),
+      ];
       renderNotice("resultView", "loader", "산림자산을 분석하고 있습니다.", "필지와 겹치는 지형, 임상, 위험 정보를 확인합니다.");
       try {
         const payload = await api("/api/analysis", {
@@ -1273,12 +1684,19 @@
         });
         state.analysis = payload;
         renderAnalysis(payload);
+        setAnalysisStep(4);
+        renderModalAnalysis(payload);
       } catch (error) {
         if (error?.missingSources) {
           renderMissingSources(error);
+          renderModalError("공간 데이터 확인 필요", "필지 분석에 필요한 공간 데이터 연결 상태를 확인해주세요.");
         } else {
           showApiError(error);
+          renderModalError("분석을 완료하지 못했습니다", extractErrorMessage(error));
         }
+      } finally {
+        timers.forEach((timer) => window.clearTimeout(timer));
+        setButtonBusy("analysisBtn", false);
       }
     }
 
@@ -1293,14 +1711,7 @@
       const sources = payload.sources || [];
       const tasks = payload.workPlan || [];
       const profile = scenarioProfile(scores.recommendedScenario);
-      const labels = [
-        ["accessibility", "접근성", "#3d7f54"],
-        ["disasterRisk", "재난위험", "#be4b3f"],
-        ["profit", "수익형", "#356f94"],
-        ["carbon", "탄소형", "#6aa84f"],
-        ["conservation", "보전형", "#7d6aa8"],
-        ["resilience", "재난저감", "#bd8335"]
-      ];
+      const labels = scoreLabels();
       const scoreRows = labels.map(([key, label, color]) => {
         const value = Math.round(scores[key] ?? 0);
         return `
@@ -1340,7 +1751,9 @@
         </div>
         <div class="scoreRows">${scoreRows}</div>
         <div class="evidenceList">${evidenceRows}</div>
+        <button id="openAnalysisWindowBtn" class="quietBtn fullAction">${icon("panel-top-open")}분석 창 다시 보기</button>
       `;
+      document.getElementById("openAnalysisWindowBtn").addEventListener("click", () => renderModalAnalysis(payload));
 
       document.getElementById("taskList").innerHTML = tasks.length
         ? tasks.map((task, index) => `
@@ -1354,12 +1767,338 @@
       lucide.createIcons();
     }
 
+    function renderModalAnalysis(payload) {
+      const scores = payload.scores || {};
+      const parcel = payload.parcel || {};
+      const tasks = payload.workPlan || [];
+      const sources = payload.sources || [];
+      const profile = scenarioProfile(scores.recommendedScenario);
+      openAnalysisModal("산림자산 분석 리포트", `${parcel.address || parcel.pnu || "선택한 필지"}의 경영 방향을 정리했습니다.`);
+      const scoreRows = scoreLabels().map(([key, label, color]) => {
+        const value = Math.round(scores[key] ?? 0);
+        return `
+          <div class="modalScoreRow">
+            <span>${label}</span>
+            <span class="modalScoreTrack"><span class="modalScoreFill" style="width:${value}%;background:${color}"></span></span>
+            <strong>${value}</strong>
+          </div>
+        `;
+      }).join("");
+      const radar = renderRadarChart(scores);
+      const insightRows = buildInsights(payload).map((item) => `
+        <div class="insightItem">
+          <span class="insightIcon">${icon(item.icon)}</span>
+          <div><strong>${item.title}</strong><span>${item.detail}</span></div>
+        </div>
+      `).join("");
+      const actionRows = (tasks.length ? tasks : [{ title: "현장 확인", reason: "분석 결과를 기준으로 상담 자료를 정리", season: "상담 전" }]).map((task, index) => `
+        <div class="timelineItem">
+          <span class="timelineNo">${index + 1}</span>
+          <div><strong>${task.title}</strong><span>${task.reason} · ${task.season}</span></div>
+        </div>
+      `).join("");
+      const evidenceRows = sources.map((source) => `
+        <div class="evidenceItem">
+          <code>${source.id}</code>
+          <div><strong>${source.name}</strong><span>${source.status || "분석 근거"}</span></div>
+        </div>
+      `).join("");
+      const scenarioTable = renderScenarioTable(scores);
+      const xaiTable = renderXaiTable(payload.xai);
+      const qualityRows = renderQualityRows(payload);
+      const calendarRows = renderWorkCalendar(tasks);
+      const featureTable = renderFeatureTable(payload.features);
+      const radarLegend = renderRadarLegend(scores);
+
+      document.getElementById("analysisModalBody").innerHTML = `
+        <div class="decisionBlock" style="border-left-color:${profile.color};background:${profile.background}">
+          <small>추천 경영 방향</small>
+          <strong>${icon(profile.icon)}${scores.recommendedScenario || "확인 필요"}</strong>
+          <p>${profile.message}</p>
+        </div>
+        <div class="impactGrid">
+          <div class="impactCell"><small>필지 면적</small><strong>${formatArea(parcel.areaHa)}</strong></div>
+          <div class="impactCell"><small>근거 데이터</small><strong>${sources.length || state.sources.length}개</strong></div>
+          <div class="impactCell"><small>우선 작업</small><strong>${tasks.length}건</strong></div>
+          <div class="impactCell"><small>위험 점수</small><strong>${Math.round(scores.disasterRisk ?? 0)}</strong></div>
+        </div>
+        <div class="analysisGrid">
+          <div>
+            <div class="modalSectionTitle">${icon("sparkles")}판단 요약</div>
+            <div class="insightList">${insightRows}</div>
+            <div class="modalSectionTitle">${icon("list-checks")}다음 행동</div>
+            <div class="actionTimeline">${actionRows}</div>
+          </div>
+          <div>
+            <div class="modalSectionTitle">${icon("radar")}종합 지표</div>
+            <div class="radarPanel">${radar}<div class="radarLegend">${radarLegend}</div></div>
+            <div class="modalSectionTitle">${icon("gauge")}시나리오 점수</div>
+            <div class="scorePanel">${scoreRows}</div>
+          </div>
+        </div>
+        <div class="wideReport">
+          <div class="modalSectionTitle">${icon("table-2")}시나리오 비교표</div>
+          ${scenarioTable}
+          <div class="modalSectionTitle">${icon("git-branch")}XAI RAG 근거 체인</div>
+          ${xaiTable}
+          <div class="modalSectionTitle">${icon("database-zap")}데이터 품질과 근거</div>
+          <div>${qualityRows}</div>
+          <div class="modalSectionTitle">${icon("rows-3")}산림공간 지표</div>
+          ${featureTable}
+          <div class="evidenceList">${evidenceRows}</div>
+          <div class="modalSectionTitle">${icon("calendar-days")}실행 일정표</div>
+          ${calendarRows}
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function renderModalError(title, detail) {
+      openAnalysisModal(title, "연결 상태를 확인한 뒤 다시 실행할 수 있습니다.");
+      document.getElementById("analysisModalBody").innerHTML = `
+        <div class="loadingPane">
+          <div>
+            ${icon("circle-alert")}
+            <strong>${title}</strong>
+            <p>${detail || "데이터 응답을 확인해주세요."}</p>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function scoreLabels() {
+      return [
+        ["accessibility", "접근성", "#245233"],
+        ["disasterRisk", "재난위험", "#5f7f62"],
+        ["profit", "수익형", "#2f7041"],
+        ["carbon", "탄소형", "#6aa84f"],
+        ["conservation", "보전형", "#4f6f52"],
+        ["resilience", "재난저감", "#789464"]
+      ];
+    }
+
+    function renderRadarChart(scores) {
+      const labels = scoreLabels();
+      const center = 110;
+      const radius = 82;
+      const points = labels.map(([key], index) => {
+        const value = Math.max(0, Math.min(100, Number(scores[key] || 0)));
+        const angle = (-90 + index * 360 / labels.length) * Math.PI / 180;
+        const r = radius * value / 100;
+        return [center + Math.cos(angle) * r, center + Math.sin(angle) * r];
+      });
+      const axis = labels.map(([, label], index) => {
+        const angle = (-90 + index * 360 / labels.length) * Math.PI / 180;
+        const x = center + Math.cos(angle) * radius;
+        const y = center + Math.sin(angle) * radius;
+        const tx = center + Math.cos(angle) * (radius + 18);
+        const ty = center + Math.sin(angle) * (radius + 18);
+        return `<line x1="${center}" y1="${center}" x2="${x}" y2="${y}" stroke="#cbd7c4" stroke-width="1"/><text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="middle" font-size="10" fill="#687268">${label}</text>`;
+      }).join("");
+      const rings = [25, 50, 75, 100].map((percent) => {
+        const ringPoints = labels.map((_, index) => {
+          const angle = (-90 + index * 360 / labels.length) * Math.PI / 180;
+          const r = radius * percent / 100;
+          return `${center + Math.cos(angle) * r},${center + Math.sin(angle) * r}`;
+        }).join(" ");
+        return `<polygon points="${ringPoints}" fill="none" stroke="#dce6d6" stroke-width="1"/>`;
+      }).join("");
+      return `
+        <svg viewBox="0 0 220 220" role="img" aria-label="종합 지표 레이더 차트">
+          ${rings}
+          ${axis}
+          <polygon points="${points.map((point) => point.join(",")).join(" ")}" fill="rgba(106,168,79,.26)" stroke="#1f4b2a" stroke-width="3"/>
+          ${points.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="4" fill="#1f4b2a"/>`).join("")}
+        </svg>
+      `;
+    }
+
+    function renderRadarLegend(scores) {
+      return scoreLabels().map(([key, label, color]) => {
+        const value = Math.round(scores[key] ?? 0);
+        return `
+          <div>
+            <span><i style="background:${color}"></i>${label}</span>
+            <strong>${value}</strong>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderScenarioTable(scores) {
+      const rows = [
+        ["수익형", scores.profit, "임도 접근성과 경제림 가능성을 중심으로 생산 효율을 검토", "작업 동선, 수종, 사업비"],
+        ["탄소형", scores.carbon, "면적과 영급을 바탕으로 장기 흡수량과 등록 가능성을 검토", "영급, 수종, 탄소상쇄 사례"],
+        ["보전형", scores.conservation, "경사와 재난 위험을 중심으로 훼손 최소화를 검토", "보전 구역, 위험 지점, 작업 제한"],
+        ["재난저감", scores.resilience, "산사태와 산불 위험을 줄이는 사전 작업을 검토", "배수, 방제, 위험 계절"]
+      ].sort((a, b) => (b[1] || 0) - (a[1] || 0));
+      return `
+        <table class="reportTable">
+          <thead><tr><th>방향</th><th>점수</th><th>판단 기준</th><th>현장 확인</th></tr></thead>
+          <tbody>
+            ${rows.map(([name, score, basis, check]) => `<tr><td><strong>${name}</strong></td><td>${Math.round(score || 0)}</td><td>${basis}</td><td>${check}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderXaiTable(xai = {}) {
+      const explanations = xai.scoreExplanations || [];
+      const chain = xai.retrievalChain || [];
+      const explanationRows = explanations.map((item) => `
+        <tr>
+          <td><strong>${item.metric}</strong><br>${Math.round(item.score ?? 0)}점</td>
+          <td>${item.formula}</td>
+          <td>${(item.sourceIds || []).join(", ")}</td>
+          <td>${formatInputMap(item.inputs)}</td>
+          <td>${item.interpretation}</td>
+        </tr>
+      `).join("");
+      const chainRows = chain.map((item, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td><strong>${item.step}</strong></td>
+          <td>${(item.sourceIds || []).join(", ")}</td>
+          <td>${item.evidence}</td>
+        </tr>
+      `).join("");
+      return `
+        <table class="reportTable">
+          <thead><tr><th>지표</th><th>점수 산식</th><th>출처</th><th>입력값</th><th>해석</th></tr></thead>
+          <tbody>${explanationRows}</tbody>
+        </table>
+        <table class="reportTable" style="margin-top:18px">
+          <thead><tr><th>순서</th><th>검색 단계</th><th>출처</th><th>연결 근거</th></tr></thead>
+          <tbody>${chainRows}</tbody>
+        </table>
+      `;
+    }
+
+    function renderFeatureTable(features = {}) {
+      const sections = [
+        ["임상도", features.stand],
+        ["입지토양", features.soil]
+      ];
+      const rows = sections.flatMap(([group, values]) => {
+        if (!values || typeof values !== "object") return [];
+        return Object.entries(values)
+          .filter(([key, value]) => value !== null && value !== undefined && value !== "" && !String(key).toLowerCase().includes("geom"))
+          .slice(0, 8)
+          .map(([key, value]) => [group, key, formatFeatureValue(value)]);
+      });
+      if (!rows.length) {
+        return `
+          <table class="reportTable">
+            <tbody><tr><td>산림공간 원천 속성은 공간 DB 적재 상태에 맞춰 표시됩니다.</td></tr></tbody>
+          </table>
+        `;
+      }
+      return `
+        <table class="reportTable">
+          <thead><tr><th>분류</th><th>속성</th><th>값</th></tr></thead>
+          <tbody>${rows.map(([group, key, value]) => `<tr><td>${group}</td><td>${key}</td><td>${value}</td></tr>`).join("")}</tbody>
+        </table>
+      `;
+    }
+
+    function formatInputMap(inputs = {}) {
+      const rows = Object.entries(inputs)
+        .filter(([, value]) => value !== null && value !== undefined && value !== "")
+        .map(([key, value]) => `${key}: ${formatFeatureValue(value)}`);
+      return rows.length ? rows.join("<br>") : "원천값 확인";
+    }
+
+    function formatFeatureValue(value) {
+      if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
+      if (typeof value === "boolean") return value ? "해당" : "미해당";
+      if (typeof value === "object") return JSON.stringify(value);
+      return String(value);
+    }
+
+    function renderQualityRows(payload) {
+      const sources = payload.sources || [];
+      const ready = sources.length || 0;
+      const total = Math.max(state.sources.length || 12, ready);
+      const quality = Math.round((ready / total) * 100);
+      const spatial = Math.round(Math.min(100, ((payload.parcel?.areaHa ? 1 : 0) + (payload.features ? 1 : 0) + ready / total) / 3 * 100));
+      const live = Math.round((state.sources.filter((source) => !source.table_name && source.status?.includes("연결")).length / 5) * 100);
+      const rows = [
+        ["공간 분석 근거", spatial, "필지 면적, 경계, 공간 테이블 교차 결과"],
+        ["공공데이터 출처", quality, `${ready}개 출처가 이번 결과에 반영`],
+        ["실시간 데이터", live, "산악기상, 산불위험, 법인, 자원통계 연결 상태"]
+      ];
+      return rows.map(([label, value, detail]) => `
+        <div class="qualityLine">
+          <span>${label}</span>
+          <span class="qualityTrack"><span class="qualityFill" style="width:${value}%"></span></span>
+          <strong>${value}</strong>
+          <span></span><span style="color:var(--muted);font-size:12px">${detail}</span><span></span>
+        </div>
+      `).join("");
+    }
+
+    function renderWorkCalendar(tasks) {
+      const rows = (tasks.length ? tasks : [{ title: "현장 확인", reason: "분석 결과를 기준으로 상담 자료 정리", season: "상담 전" }]).map((task) => `
+        <tr>
+          <td><strong>${task.season || "확인 필요"}</strong></td>
+          <td>${task.title || "작업 확인"}</td>
+          <td>${task.reason || "근거 확인"}</td>
+          <td>산림기술자 상담 전 검토</td>
+        </tr>
+      `).join("");
+      return `
+        <table class="reportTable">
+          <thead><tr><th>시기</th><th>작업</th><th>근거</th><th>활용</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    function buildInsights(payload) {
+      const scores = payload.scores || {};
+      const parcel = payload.parcel || {};
+      const tasks = payload.workPlan || [];
+      const scenario = scores.recommendedScenario || "확인 필요";
+      const topScore = Math.max(scores.profit || 0, scores.carbon || 0, scores.conservation || 0, scores.resilience || 0);
+      const insights = [
+        {
+          icon: "badge-check",
+          title: `${scenario} 우선`,
+          detail: `경영 시나리오 중 가장 높은 점수는 ${Math.round(topScore)}점입니다.`
+        },
+        {
+          icon: "land-plot",
+          title: `${formatArea(parcel.areaHa)} 필지`,
+          detail: "면적과 경계를 기준으로 산림공간정보를 교차했습니다."
+        },
+        {
+          icon: scores.disasterRisk > 55 ? "triangle-alert" : "shield-check",
+          title: scores.disasterRisk > 55 ? "위험 관리 우선" : "위험 점수 안정권",
+          detail: `재난위험 점수는 ${Math.round(scores.disasterRisk ?? 0)}점입니다.`
+        },
+        {
+          icon: "calendar-check",
+          title: `${tasks.length || 1}개 실행 항목`,
+          detail: tasks[0]?.title ? `첫 작업은 ${tasks[0].title}입니다.` : "현장 상담 전 확인 항목을 정리합니다."
+        }
+      ];
+      if ((scores.accessibility ?? 0) <= 20) {
+        insights.splice(2, 0, {
+          icon: "route",
+          title: "접근성 보완 필요",
+          detail: "임도 접근성 점수가 낮아 작업 동선 확인이 먼저 필요합니다."
+        });
+      }
+      return insights.slice(0, 5);
+    }
+
     function scenarioProfile(name = "") {
       if (name.includes("수익")) {
         return {
           icon: "trending-up",
-          color: "#356f94",
-          background: "linear-gradient(90deg, rgba(53,111,148,.18), rgba(53,111,148,0))",
+          color: "#2f7041",
+          background: "linear-gradient(90deg, rgba(47,112,65,.18), rgba(47,112,65,0))",
           message: "접근성과 경제림 조건을 함께 보고 생산과 관리 효율을 우선 검토합니다."
         };
       }
@@ -1374,16 +2113,16 @@
       if (name.includes("보전")) {
         return {
           icon: "shield-check",
-          color: "#7d6aa8",
-          background: "linear-gradient(90deg, rgba(125,106,168,.18), rgba(125,106,168,0))",
+          color: "#4f6f52",
+          background: "linear-gradient(90deg, rgba(79,111,82,.18), rgba(79,111,82,0))",
           message: "경사와 재난 위험을 우선 반영해 훼손을 줄이는 관리 방향을 잡습니다."
         };
       }
       if (name.includes("재난")) {
         return {
           icon: "triangle-alert",
-          color: "#bd8335",
-          background: "linear-gradient(90deg, rgba(189,131,53,.2), rgba(189,131,53,0))",
+          color: "#789464",
+          background: "linear-gradient(90deg, rgba(120,148,100,.2), rgba(120,148,100,0))",
           message: "산사태와 산불 위험을 낮추는 작업을 먼저 배치하고 현장 안전을 확인합니다."
         };
       }

@@ -169,6 +169,7 @@ async def analyze_parcel(payload: AnalysisRequest):
         },
         "features": row["features"],
         "scores": scores,
+        "xai": _build_xai(features, scores),
         "workPlan": _work_plan(scores),
         "sources": _analysis_sources(),
     }
@@ -397,3 +398,88 @@ def _analysis_sources() -> list[dict]:
         for source in PUBLIC_DATA_SOURCES
         if source.id in {"D1", "D2", "D3", "D4", "D5", "D8", "D12"}
     ]
+
+
+def _build_xai(features: FeatureSet, scores: dict) -> dict:
+    return {
+        "method": "공공데이터 검색 체인과 가중치 기반 설명",
+        "retrievalChain": [
+            {"step": "필지 확정", "sourceIds": ["D12"], "evidence": "연속지적도 경계 또는 VWorld 조회 geometry를 분석 기준으로 사용"},
+            {"step": "공간 교차", "sourceIds": ["D1", "D2", "D3", "D4", "D5", "D8"], "evidence": "필지와 산림공간정보를 PostGIS에서 교차"},
+            {"step": "지표 산정", "sourceIds": ["D2", "D4", "D5", "D8"], "evidence": "접근성, 재난위험, 생산성, 보전성 지표 계산"},
+            {"step": "경영 방향", "sourceIds": ["D1", "D3", "D9", "D10", "D11"], "evidence": "시나리오 점수와 실행 작업 후보 연결"},
+        ],
+        "scoreExplanations": [
+            {
+                "metric": "접근성",
+                "score": scores.get("accessibility"),
+                "formula": "임도 거리 점수 - 경사 페널티 + 임도 밀도 보정",
+                "sourceIds": ["D2", "D4"],
+                "inputs": {
+                    "roadDistanceM": features.road_distance_m,
+                    "roadDensityMPerHa": features.road_density_m_per_ha,
+                    "slopeDegree": features.slope_degree,
+                },
+                "interpretation": "임도와 가까울수록, 경사가 낮을수록 작업성과 운반성이 높게 평가됩니다.",
+            },
+            {
+                "metric": "재난위험",
+                "score": scores.get("disasterRisk"),
+                "formula": "산사태 평균등급과 고위험 비율을 위험 점수로 환산",
+                "sourceIds": ["D5", "D6"],
+                "inputs": {
+                    "avgLandslideGrade": features.avg_landslide_grade,
+                    "highLandslideRatio": features.high_landslide_ratio,
+                    "fireRiskIndex": features.fire_risk_index,
+                },
+                "interpretation": "위험 점수가 높을수록 보전형 또는 재난저감형 관리 필요성이 커집니다.",
+            },
+            {
+                "metric": "수익형",
+                "score": scores.get("profit"),
+                "formula": "생산성 56% + 접근성 34% + 재난 안정성 10%",
+                "sourceIds": ["D1", "D3", "D4", "D8"],
+                "inputs": {
+                    "economicForest": features.economic_forest,
+                    "plantingFitCount": features.planting_fit_count,
+                    "standAgeClass": features.stand_age_class,
+                },
+                "interpretation": "경제림 구역, 조림 적합 후보, 접근성이 좋을수록 수익형 점수가 높아집니다.",
+            },
+            {
+                "metric": "탄소형",
+                "score": scores.get("carbon"),
+                "formula": "영급 + 필지 면적 + 탄소상쇄 사례 유사도",
+                "sourceIds": ["D1", "D9"],
+                "inputs": {
+                    "areaHa": features.area_ha,
+                    "standAgeClass": features.stand_age_class,
+                    "carbonCaseSimilarity": features.carbon_case_similarity,
+                },
+                "interpretation": "면적과 생장 단계가 탄소 흡수 관리의 기본 판단값으로 쓰입니다.",
+            },
+            {
+                "metric": "보전형",
+                "score": scores.get("conservation"),
+                "formula": "재난위험 58% + 경사 페널티",
+                "sourceIds": ["D2", "D5"],
+                "inputs": {
+                    "slopeDegree": features.slope_degree,
+                    "avgLandslideGrade": features.avg_landslide_grade,
+                },
+                "interpretation": "경사가 높거나 위험 지표가 높을수록 보전 중심 관리가 우선됩니다.",
+            },
+            {
+                "metric": "재난저감형",
+                "score": scores.get("resilience"),
+                "formula": "재난위험 62% + 낮은 접근성 보정 + 면적 보정",
+                "sourceIds": ["D4", "D5", "D6"],
+                "inputs": {
+                    "areaHa": features.area_ha,
+                    "roadDistanceM": features.road_distance_m,
+                    "avgLandslideGrade": features.avg_landslide_grade,
+                },
+                "interpretation": "위험이 높고 접근성이 낮은 필지는 사전 점검과 저감 작업을 우선 검토합니다.",
+            },
+        ],
+    }

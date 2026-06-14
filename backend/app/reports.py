@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from io import BytesIO
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -10,7 +11,12 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+
+COVER_GREEN = "#18351c"
+LINE_GREEN = "#c7d4c0"
+LIGHT_GREEN = "#edf4ea"
 
 
 def _register_korean_font() -> str:
@@ -32,20 +38,44 @@ def build_plan_pdf(analysis: dict) -> bytes:
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm, topMargin=18 * mm, bottomMargin=18 * mm)
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="KoTitle", fontName=font_name, fontSize=18, leading=24, spaceAfter=10))
-    styles.add(ParagraphStyle(name="KoHeading", fontName=font_name, fontSize=12, leading=17, spaceBefore=10, spaceAfter=6))
-    styles.add(ParagraphStyle(name="KoBody", fontName=font_name, fontSize=9, leading=14))
+    styles.add(ParagraphStyle(name="CoverBrand", fontName=font_name, fontSize=14, leading=18, textColor=colors.white, spaceAfter=18))
+    styles.add(ParagraphStyle(name="CoverTitle", fontName=font_name, fontSize=30, leading=38, textColor=colors.white, spaceAfter=8))
+    styles.add(ParagraphStyle(name="CoverSubtitle", fontName=font_name, fontSize=14, leading=22, textColor=colors.HexColor("#dfeede"), spaceAfter=22))
+    styles.add(ParagraphStyle(name="CoverBody", fontName=font_name, fontSize=10, leading=16, textColor=colors.HexColor("#dfeede")))
+    styles.add(ParagraphStyle(name="CoverSummary", fontName=font_name, fontSize=11, leading=18, textColor=colors.white, leftIndent=0, spaceAfter=7))
+    styles.add(ParagraphStyle(name="KoTitle", fontName=font_name, fontSize=18, leading=24, spaceAfter=10, textColor=colors.HexColor(COVER_GREEN)))
+    styles.add(ParagraphStyle(name="KoHeading", fontName=font_name, fontSize=12, leading=17, spaceBefore=10, spaceAfter=6, textColor=colors.HexColor(COVER_GREEN)))
+    styles.add(ParagraphStyle(name="KoBody", fontName=font_name, fontSize=9, leading=14, textColor=colors.HexColor("#203024")))
 
     parcel = analysis.get("parcel", {})
     scores = analysis.get("scores", {})
+    xai = analysis.get("xai", {})
     sources = analysis.get("sources", [])
     tasks = analysis.get("workPlan", [])
+    features = analysis.get("features", {})
     narrative = str(analysis.get("narrative") or "").strip()
+    scenario = str(scores.get("recommendedScenario") or "확인 필요")
+    area = parcel.get("areaHa", "확인 필요")
+    area_text = "확인 필요" if area == "확인 필요" else f"{area} ha"
+    address = str(parcel.get("address") or parcel.get("pnu") or "선택 필지")
 
     story = [
-        Paragraph("GruPlan 산림경영계획서 초안", styles["KoTitle"]),
-        Paragraph("행정 제출 전 산림기술자 또는 담당 기관의 검토가 필요한 참고 문서입니다.", styles["KoBody"]),
-        Spacer(1, 8),
+        Spacer(1, 64),
+        Paragraph("GruPlan AI", styles["CoverBrand"]),
+        Paragraph("산림경영 분석 리포트", styles["CoverTitle"]),
+        Paragraph("필지 단위 산림자산 진단과 경영 방향 제안", styles["CoverSubtitle"]),
+        Spacer(1, 52),
+        Paragraph(f"대상 필지&nbsp;&nbsp; {escape(address)}", styles["CoverSummary"]),
+        Paragraph(f"추천 방향&nbsp;&nbsp; {escape(scenario)}", styles["CoverSummary"]),
+        Paragraph(f"분석 면적&nbsp;&nbsp; {escape(str(area_text))}", styles["CoverSummary"]),
+        Spacer(1, 24),
+        Paragraph("필지 경계, 산림공간정보, 재난 위험, 탄소 가능성, 실행 일정을 한 문서로 정리했습니다.", styles["CoverBody"]),
+        Spacer(1, 250),
+        Paragraph("공공데이터 기반 참고 문서입니다. 행정 제출 전 산림기술자 또는 담당 기관 검토가 필요합니다.", styles["CoverBody"]),
+        PageBreak(),
+        Paragraph("산림경영계획서 초안", styles["KoTitle"]),
+        Paragraph("필지 경계, 공간 데이터, 시나리오 점수, XAI 근거 체인을 정리한 참고 문서입니다.", styles["KoBody"]),
+        Spacer(1, 10),
     ]
 
     parcel_rows = [["항목", "내용"]]
@@ -75,6 +105,41 @@ def build_plan_pdf(analysis: dict) -> bytes:
     score_rows.append(["추천 시나리오", scores.get("recommendedScenario", "확인 필요")])
     story.append(Table(score_rows, colWidths=[60 * mm, 98 * mm], style=_table_style(font_name)))
 
+    feature_rows = _feature_rows(features)
+    if feature_rows:
+        story.append(Paragraph("산림공간 원천 지표", styles["KoHeading"]))
+        rows = [["분류", "속성", "값"]]
+        for group, key, value in feature_rows:
+            rows.append([group, key, _para(value, styles)])
+        story.append(Table(rows, colWidths=[30 * mm, 48 * mm, 80 * mm], style=_table_style(font_name, font_size=7, leading=10)))
+
+    explanations = xai.get("scoreExplanations") or []
+    if explanations:
+        story.append(Paragraph("XAI 점수 근거", styles["KoHeading"]))
+        rows = [["지표", "점수 산식", "출처", "입력값", "해석"]]
+        for item in explanations:
+            rows.append([
+                _para(f"{item.get('metric', '')}<br/>{item.get('score', '확인 필요')}점", styles),
+                _para(item.get("formula", ""), styles),
+                _para(", ".join(item.get("sourceIds", [])), styles),
+                _para(_input_summary(item.get("inputs") or {}), styles),
+                _para(item.get("interpretation", ""), styles),
+            ])
+        story.append(Table(rows, colWidths=[21 * mm, 38 * mm, 19 * mm, 35 * mm, 45 * mm], style=_table_style(font_name, font_size=7, leading=10)))
+
+    chain = xai.get("retrievalChain") or []
+    if chain:
+        story.append(Paragraph("공공데이터 근거 체인", styles["KoHeading"]))
+        rows = [["순서", "단계", "출처", "근거"]]
+        for index, item in enumerate(chain, start=1):
+            rows.append([
+                str(index),
+                _para(item.get("step", ""), styles),
+                _para(", ".join(item.get("sourceIds", [])), styles),
+                _para(item.get("evidence", ""), styles),
+            ])
+        story.append(Table(rows, colWidths=[14 * mm, 34 * mm, 36 * mm, 74 * mm], style=_table_style(font_name, font_size=7, leading=10)))
+
     story.append(Paragraph("올해 작업 체크리스트", styles["KoHeading"]))
     if tasks:
         rows = [["작업", "근거", "시기"]]
@@ -90,19 +155,63 @@ def build_plan_pdf(analysis: dict) -> bytes:
         source_rows.append([source.get("id", ""), source.get("name", ""), source.get("status", "")])
     story.append(Table(source_rows, colWidths=[18 * mm, 102 * mm, 38 * mm], style=_table_style(font_name)))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_cover_page)
     return buffer.getvalue()
 
 
-def _table_style(font_name: str) -> TableStyle:
+def _para(value, styles):
+    escaped = escape(str(value or "")).replace("&lt;br/&gt;", "<br/>")
+    return Paragraph(escaped, styles["KoBody"])
+
+
+def _feature_rows(features: dict) -> list[tuple[str, str, str]]:
+    rows = []
+    for group, values in [("임상도", features.get("stand")), ("입지토양", features.get("soil"))]:
+        if not isinstance(values, dict):
+            continue
+        for key, value in list(values.items())[:8]:
+            if value in (None, "") or "geom" in str(key).lower():
+                continue
+            rows.append((group, str(key), _format_feature_value(value)))
+    return rows
+
+
+def _input_summary(inputs: dict) -> str:
+    rows = []
+    for key, value in inputs.items():
+        if value in (None, ""):
+            continue
+        rows.append(f"{key}: {_format_feature_value(value)}")
+    return "<br/>".join(rows) if rows else "원천값 확인"
+
+
+def _format_feature_value(value) -> str:
+    if isinstance(value, bool):
+        return "해당" if value else "미해당"
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _cover_page(canvas, doc):
+    canvas.saveState()
+    canvas.setFillColor(colors.HexColor(COVER_GREEN))
+    width, height = A4
+    canvas.rect(0, 0, width, height, stroke=0, fill=1)
+    canvas.restoreState()
+
+
+def _table_style(font_name: str, font_size: int = 8, leading: int = 11) -> TableStyle:
     return TableStyle(
         [
             ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("LEADING", (0, 0), (-1, -1), 11),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf4ea")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#18351c")),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#c7d4c0")),
+            ("FONTSIZE", (0, 0), (-1, -1), font_size),
+            ("LEADING", (0, 0), (-1, -1), leading),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(LIGHT_GREEN)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(COVER_GREEN)),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.35, colors.HexColor(LINE_GREEN)),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 5),
             ("RIGHTPADDING", (0, 0), (-1, -1), 5),

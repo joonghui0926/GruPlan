@@ -15,6 +15,7 @@ backend/server.err
 backend/tunnel.log
 backend/tunnel.err
 backend/screenshot-*.png
+submission_images/
 
 data/raw/
 data/processed/
