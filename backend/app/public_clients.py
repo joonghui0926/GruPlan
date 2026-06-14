@@ -252,6 +252,24 @@ class PublicApiClient:
         }
         return await fetch_json("https://api.vworld.kr/req/data", params, "D12", self.vworld_headers())
 
+    async def cadastral_by_pnu(self, pnu: str) -> dict:
+        key = self.require_vworld_key()
+        params = {
+            "service": "data",
+            "request": "GetFeature",
+            "data": "LP_PA_CBND_BUBUN",
+            "attrFilter": f"pnu:={pnu}",
+            "crs": "EPSG:4326",
+            "format": "json",
+            "errorFormat": "json",
+            "geometry": "true",
+            "attribute": "true",
+            "domain": self.vworld_domain(),
+            "size": 10,
+            "key": key,
+        }
+        return await fetch_json("https://api.vworld.kr/req/data", params, "D12", self.vworld_headers())
+
     async def mountain_weather(self, obsid: str | None = None, local_area: str | None = None) -> dict:
         key = self.require_data_key("D7")
         params = {

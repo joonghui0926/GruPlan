@@ -4,6 +4,7 @@ from app.main import (
     _extract_int_property,
     _extract_slope_degree,
     _extract_text_property,
+    _first_vworld_feature,
     _json_object,
     _valid_pnu,
 )
@@ -14,6 +15,13 @@ def test_extracts_stand_age_and_species_from_public_data_keys():
 
     assert _extract_int_property(properties, STAND_AGE_KEYS) == 4
     assert _extract_text_property(properties, STAND_SPECIES_KEYS) == "활엽수림"
+
+
+def test_extracts_extended_stand_fields():
+    properties = {"AGECLS_CD": "6", "KOFTR_CD1": "42"}
+
+    assert _extract_int_property(properties, STAND_AGE_KEYS) == 6
+    assert "42" in _extract_text_property(properties, STAND_SPECIES_KEYS)
 
 
 def test_extracts_stand_names_from_nm_fields():
@@ -46,3 +54,23 @@ def test_validates_pnu_before_database_lookup():
     assert _valid_pnu("5176033024200010000") == "5176033024200010000"
     assert _valid_pnu("123") is None
     assert _valid_pnu("gid-42") is None
+
+
+def test_extracts_first_vworld_feature():
+    data = {
+        "response": {
+            "result": {
+                "featureCollection": {
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {"pnu": "4886037025200660000"},
+                            "geometry": {"type": "Polygon", "coordinates": []},
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    assert _first_vworld_feature(data)["properties"]["pnu"] == "4886037025200660000"

@@ -2364,6 +2364,7 @@
       const sections = [
         ["추출 지표", features.derived],
         ["임상도 교차", features.standMatch],
+        ["토양도 교차", features.soilMatch],
         ["임상도", features.stand],
         ["입지토양", features.soil]
       ];
@@ -2381,7 +2382,7 @@
           .map(([key, value]) => [
             group,
             featureLabelFor(key),
-            group === "추출 지표" ? formatDerivedValue(key, value) : formatFeatureValue(value)
+            group === "추출 지표" ? formatDerivedValue(key, value, features) : formatFeatureValue(value)
           ]);
       });
       if (!rows.length) {
@@ -2417,8 +2418,16 @@
       return labels[key] || key;
     }
 
-    function formatDerivedValue(key, value) {
+    function formatDerivedValue(key, value, features = {}) {
       if (isBlank(value)) {
+        const hasStandFeature = features.stand && Object.keys(features.stand || {}).length;
+        if ((key === "standAgeClass" || key === "standSpecies") && !hasStandFeature) {
+          return "임상도 원천 피처 미교차";
+        }
+        const hasSoilFeature = features.soil && Object.keys(features.soil || {}).length;
+        if (key === "slopeDegree" && !hasSoilFeature) {
+          return "입지토양도 원천 피처 미교차";
+        }
         const fallback = {
           standAgeClass: "임상도 영급 속성 없음",
           standSpecies: "임상도 수종 속성 없음",

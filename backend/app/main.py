@@ -74,6 +74,12 @@ STAND_AGE_KEYS = [
     "AGE",
     "AGCLS_CD",
     "AGCLS_NM",
+    "AGCLS",
+    "AGECLS_CD",
+    "AGECLS_NM",
+    "FRSTAGE",
+    "FRST_AGE",
+    "STORUNST_CD",
 ]
 STAND_SPECIES_KEYS = [
     "species",
@@ -103,6 +109,9 @@ STAND_SPECIES_KEYS = [
     "KOFTR_NM",
     "FRTP_CD",
     "FRTP_NM",
+    "KOFTR",
+    "KOFTR_CD1",
+    "KOFTR_NM1",
 ]
 SLOPE_KEYS = [
     "slope_degree",
@@ -165,20 +174,29 @@ async def health():
 @app.get("/api/data-sources")
 async def data_sources():
     loaded_tables = await _loaded_tables()
+    table_counts = await _table_row_estimates(loaded_tables)
     configured_keys = {
         "data": bool(settings.data_go_kr_service_key),
         "vworld": bool(settings.vworld_api_key),
     }
     items = []
     for source in PUBLIC_DATA_SOURCES:
+        row_count = table_counts.get(source.table_name or "", None)
         status = "연결 가능"
         if source.table_name:
-            status = "공간 DB 연결" if source.table_name in loaded_tables else "스키마 확인 필요"
+            if source.table_name not in loaded_tables:
+                status = "스키마 확인 필요"
+            elif not row_count:
+                status = "원천 데이터 0건"
+            else:
+                status = f"공간 DB 적재 완료 · {row_count:,}건"
         if source.requires_key:
             key_ready = configured_keys["vworld"] if source.id == "D12" else configured_keys["data"]
             status = "API 키 확인 필요" if not key_ready else status
         item = source.to_dict()
         item["status"] = status
+        if row_count is not None:
+            item["rowCount"] = row_count
         items.append(item)
     return {"items": items}
 
@@ -224,6 +242,10 @@ async def analyze_parcel(payload: AnalysisRequest):
         raise HTTPException(status_code=400, detail="pnu 또는 geometry가 필요합니다.")
 
     row = await _query_spatial_features(payload)
+    if row is None and _valid_pnu(payload.pnu) and not payload.geometry:
+        enriched_payload = await _payload_with_vworld_geometry(payload)
+        if enriched_payload.geometry:
+            row = await _query_spatial_features(enriched_payload)
     if row is None:
         raise HTTPException(status_code=404, detail="해당 필지를 찾지 못했습니다.")
 
@@ -346,6 +368,23 @@ async def _loaded_tables() -> set[str]:
     return {row["table_name"] for row in rows}
 
 
+async def _table_row_estimates(table_names: set[str]) -> dict[str, int]:
+    if not db.pool or not table_names:
+        return {}
+    rows = await db.fetch(
+        """
+        select c.relname as table_name,
+               greatest(coalesce(s.n_live_tup, c.reltuples, 0)::bigint, 0) as row_count
+        from pg_class c
+        left join pg_stat_all_tables s on s.relid = c.oid
+        where c.relkind in ('r', 'p')
+          and c.relname = any($1::text[])
+        """,
+        list(table_names),
+    )
+    return {row["table_name"]: int(row["row_count"] or 0) for row in rows}
+
+
 async def _missing_required_spatial_tables() -> list[dict]:
     loaded = await _loaded_tables()
     required = ["D1", "D2", "D3", "D4", "D5", "D8", "D12"]
@@ -393,11 +432,29 @@ async def _query_spatial_features(payload: AnalysisRequest):
       left join forest_roads r on ST_Intersects(a.geom, r.geom)
     ),
     soil as (
-      select properties
+      select
+        s.properties,
+        case
+          when s.geom is null then null
+          when ST_Intersects(a.geom, s.geom) then '필지 교차'
+          else '근접 보정'
+        end as match_type,
+        case when s.geom is null then null else ST_Distance(a.geom::geography, s.geom::geography) end as distance_m,
+        case when s.geom is null or not ST_Intersects(a.geom, s.geom) then 0
+             else ST_Area(ST_Intersection(a.geom, s.geom)::geography)
+        end as overlap_area_m2
       from area_calc a
-      join forest_soils s on ST_Intersects(a.geom, s.geom)
-      order by ST_Area(ST_Intersection(a.geom, s.geom)) desc
-      limit 1
+      left join lateral (
+        select properties, geom
+        from forest_soils s
+        where ST_Intersects(a.geom, s.geom)
+           or ST_DWithin(a.geom::geography, s.geom::geography, 1000)
+        order by
+          case when ST_Intersects(a.geom, s.geom) then 0 else 1 end,
+          case when ST_Intersects(a.geom, s.geom) then ST_Area(ST_Intersection(a.geom, s.geom)::geography) else 0 end desc,
+          s.geom <-> a.geom
+        limit 1
+      ) s on true
     ),
     stand as (
       select
@@ -416,7 +473,7 @@ async def _query_spatial_features(payload: AnalysisRequest):
         select properties, geom
         from forest_stands s
         where ST_Intersects(a.geom, s.geom)
-           or ST_DWithin(a.geom::geography, s.geom::geography, 250)
+           or ST_DWithin(a.geom::geography, s.geom::geography, 1000)
         order by
           case when ST_Intersects(a.geom, s.geom) then 0 else 1 end,
           case when ST_Intersects(a.geom, s.geom) then ST_Area(ST_Intersection(a.geom, s.geom)::geography) else 0 end desc,
@@ -477,6 +534,11 @@ async def _query_spatial_features(payload: AnalysisRequest):
       nullif((stand.properties->>'age_class'), '')::int as stand_age_class,
       jsonb_build_object(
         'soil', soil.properties,
+        'soilMatch', jsonb_build_object(
+          'matchType', soil.match_type,
+          'distanceM', soil.distance_m,
+          'overlapAreaM2', soil.overlap_area_m2
+        ),
         'stand', stand.properties,
         'standMatch', jsonb_build_object(
           'matchType', stand.match_type,
@@ -623,6 +685,30 @@ def _first_vworld_point(search: dict) -> dict | None:
         return {"lon": float(point["x"]), "lat": float(point["y"])}
     except (KeyError, TypeError, ValueError):
         return None
+
+
+async def _payload_with_vworld_geometry(payload: AnalysisRequest) -> AnalysisRequest:
+    pnu = _valid_pnu(payload.pnu)
+    if not pnu:
+        return payload
+    try:
+        cadastral = await public_client.cadastral_by_pnu(pnu)
+    except PublicDataError:
+        return payload
+    feature = _first_vworld_feature(cadastral)
+    geometry = feature.get("geometry") if isinstance(feature, dict) else None
+    if not isinstance(geometry, dict):
+        return payload
+    return payload.model_copy(update={"geometry": geometry})
+
+
+def _first_vworld_feature(data: dict) -> dict:
+    collection = data.get("response", {}).get("result", {}).get("featureCollection", {})
+    features = collection.get("features", []) if isinstance(collection, dict) else []
+    if isinstance(features, list) and features:
+        feature = features[0]
+        return feature if isinstance(feature, dict) else {}
+    return {}
 
 
 def _work_plan(scores: dict) -> list[dict]:
