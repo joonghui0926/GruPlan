@@ -284,6 +284,13 @@ class PublicApiClient:
         captain: str | None = None,
         region: str | None = None,
     ) -> dict:
+        snapshot = _forest_company_snapshot()
+        if region and snapshot:
+            items = snapshot.get("items") or []
+            filtered = _filter_snapshot_items(items, region, trade_name, captain)
+            if filtered:
+                return _snapshot_response(snapshot, filtered)
+
         params = {"pageNo": 1, "numOfRows": 20}
         if trade_name:
             params["tradeName"] = trade_name
@@ -296,7 +303,6 @@ class PublicApiClient:
                 "D10",
             )
         except PublicDataError:
-            snapshot = _forest_company_snapshot()
             if snapshot:
                 items = snapshot.get("items") or []
                 filtered = _filter_snapshot_items(items, region, trade_name, captain)
