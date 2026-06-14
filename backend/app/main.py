@@ -104,6 +104,14 @@ async def data_sources():
     return {"items": items}
 
 
+@app.get("/api/client-config")
+async def client_config():
+    return {
+        "vworldKey": settings.vworld_api_key,
+        "vworldDomain": settings.vworld_referer,
+    }
+
+
 @app.post("/api/parcels/lookup")
 async def lookup_parcel(payload: ParcelLookupRequest):
     try:

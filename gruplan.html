@@ -957,7 +957,8 @@
       parcelLayer: null,
       selectedFeature: null,
       analysis: null,
-      sources: []
+      sources: [],
+      clientConfig: null
     };
 
     const map = L.map("map", { zoomControl: false, preferCanvas: true }).setView([36.52, 127.85], 7);
@@ -1091,10 +1092,7 @@
       if (!query) return;
       renderNotice("resultView", "loader", "필지 위치를 찾고 있습니다.", "주소와 지번을 기준으로 지도 경계를 확인합니다.");
       try {
-        const data = await api("/api/parcels/lookup", {
-          method: "POST",
-          body: JSON.stringify({ query })
-        });
+        const data = await lookupParcel({ query });
         handleParcelResponse(data);
       } catch (error) {
         showApiError(error, "D12");
@@ -1104,14 +1102,117 @@
     async function lookupByPoint(lat, lon) {
       renderNotice("resultView", "loader", "클릭한 위치의 필지를 찾고 있습니다.", "지도 경계와 필지 번호를 확인합니다.");
       try {
-        const data = await api("/api/parcels/lookup", {
-          method: "POST",
-          body: JSON.stringify({ lat, lon })
-        });
+        const data = await lookupParcel({ lat, lon });
         handleParcelResponse(data);
       } catch (error) {
         showApiError(error, "D12");
       }
+    }
+
+    async function lookupParcel(payload) {
+      const direct = await lookupParcelWithVworld(payload);
+      if (direct) return direct;
+      return api("/api/parcels/lookup", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+    }
+
+    async function lookupParcelWithVworld(payload) {
+      const config = await loadClientConfig();
+      if (!config?.vworldKey) return null;
+      if (payload.query) {
+        const search = await vworldJsonp("/req/search", {
+          service: "search",
+          request: "search",
+          version: "2.0",
+          crs: "EPSG:4326",
+          size: 10,
+          page: 1,
+          type: "address",
+          category: "parcel",
+          format: "json",
+          errorFormat: "json",
+          domain: config.vworldDomain || location.origin,
+          query: payload.query,
+          key: config.vworldKey
+        });
+        const point = firstVworldPoint(search);
+        if (!point) return { search, cadastral: null };
+        const cadastral = await cadastralByPoint(point.lat, point.lon, config);
+        return { search, cadastral };
+      }
+      if (payload.lat !== undefined && payload.lon !== undefined) {
+        return cadastralByPoint(payload.lat, payload.lon, config);
+      }
+      return null;
+    }
+
+    async function loadClientConfig() {
+      if (state.clientConfig) return state.clientConfig;
+      try {
+        state.clientConfig = await api("/api/client-config");
+      } catch (error) {
+        state.clientConfig = {};
+      }
+      return state.clientConfig;
+    }
+
+    function cadastralByPoint(lat, lon, config) {
+      return vworldJsonp("/req/data", {
+        service: "data",
+        request: "GetFeature",
+        version: "2.0",
+        data: "LP_PA_CBND_BUBUN",
+        geomFilter: `POINT(${lon} ${lat})`,
+        crs: "EPSG:4326",
+        format: "json",
+        errorFormat: "json",
+        geometry: "true",
+        attribute: "true",
+        domain: config.vworldDomain || location.origin,
+        size: 10,
+        key: config.vworldKey
+      });
+    }
+
+    function vworldJsonp(path, params) {
+      return new Promise((resolve, reject) => {
+        const callbackName = `gruplanVworld${Date.now()}${Math.floor(Math.random() * 10000)}`;
+        const url = new URL(`https://api.vworld.kr${path}`);
+        Object.entries({ ...params, callback: callbackName }).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) url.searchParams.set(key, value);
+        });
+        const script = document.createElement("script");
+        const timer = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("VWorld 응답 시간이 초과되었습니다."));
+        }, 12000);
+        function cleanup() {
+          window.clearTimeout(timer);
+          delete window[callbackName];
+          script.remove();
+        }
+        window[callbackName] = (data) => {
+          cleanup();
+          resolve(data);
+        };
+        script.onerror = () => {
+          cleanup();
+          reject(new Error("VWorld 브라우저 호출을 확인해주세요."));
+        };
+        script.src = url.toString();
+        document.head.appendChild(script);
+      });
+    }
+
+    function firstVworldPoint(search) {
+      const items = search?.response?.result?.items || [];
+      if (!items.length) return null;
+      const point = items[0].point || {};
+      const lon = Number(point.x);
+      const lat = Number(point.y);
+      return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
     }
 
     function handleParcelResponse(data) {
