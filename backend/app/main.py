@@ -135,7 +135,15 @@ async def index():
     html = Path(__file__).resolve().parents[2] / "gruplan.html"
     if not html.exists():
         raise HTTPException(status_code=404, detail="gruplan.html을 찾을 수 없습니다.")
-    return FileResponse(html)
+    return FileResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/gruplan_logo.png")
+async def logo():
+    logo_path = Path(__file__).resolve().parents[2] / "gruplan_logo.png"
+    if not logo_path.exists():
+        raise HTTPException(status_code=404, detail="gruplan_logo.png not found")
+    return FileResponse(logo_path, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/health")
@@ -236,6 +244,11 @@ async def analyze_parcel(payload: AnalysisRequest):
         "standSpecies": stand_species,
         "slopeDegree": slope_degree,
         "fireRiskIndex": fire_risk_index,
+        "plantingFitCount": int(row["planting_fit_count"] or 0),
+        "economicForest": bool(row["economic_forest"]),
+        "roadDistanceM": _number_or_none(row["road_distance_m"]),
+        "roadDensityMPerHa": _number_or_none(row["road_density_m_per_ha"]),
+        "avgLandslideGrade": _number_or_none(row["avg_landslide_grade"]),
     }
     features = FeatureSet(
         area_ha=float(row["area_ha"]) if row["area_ha"] is not None else None,
