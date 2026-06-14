@@ -17,6 +17,8 @@ services:
         sync: false
       - key: VWORLD_API_KEY
         sync: false
+      - key: VWORLD_REFERER
+        value: https://gruplan-ai.onrender.com
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL

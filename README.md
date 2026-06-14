@@ -49,6 +49,7 @@ Render Web Service에는 아래 값을 넣습니다. 키 값은 저장소에 넣
 DATABASE_URL=Render Postgres connectionString
 DATA_GO_KR_SERVICE_KEY=공공데이터포털 Decoding 인증키
 VWORLD_API_KEY=VWorld 운영 인증키
+VWORLD_REFERER=https://gruplan-ai.onrender.com
 OPENAI_API_KEY=OpenAI Project API Key
 OPENAI_MODEL=gpt-5.4-mini
 FIRE_RISK_ENDPOINT=

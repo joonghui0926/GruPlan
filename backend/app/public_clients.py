@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from json import JSONDecodeError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -38,11 +38,37 @@ def _upstream_message(response: httpx.Response) -> str:
     return text[:260] if text else response.reason_phrase
 
 
-async def fetch_xml(url: str, params: dict, source_id: str) -> dict:
+DEFAULT_HEADERS = {
+    "Accept": "application/json, application/xml, text/xml, */*",
+    "Connection": "close",
+    "User-Agent": "Mozilla/5.0 (GruPlan AI; public-data client)",
+}
+
+
+def _fallback_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.scheme == "https" and parsed.netloc.endswith("vworld.kr"):
+        return urlunparse(parsed._replace(scheme="http"))
+    return None
+
+
+async def _get(url: str, params: dict, headers: dict[str, str] | None = None) -> httpx.Response:
+    request_headers = {**DEFAULT_HEADERS, **(headers or {})}
     try:
-        async with httpx.AsyncClient(timeout=18) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
+        async with httpx.AsyncClient(timeout=18, follow_redirects=True) as client:
+            return await client.get(url, params=params, headers=request_headers)
+    except httpx.RemoteProtocolError:
+        fallback = _fallback_url(url)
+        if not fallback:
+            raise
+        async with httpx.AsyncClient(timeout=18, follow_redirects=True) as client:
+            return await client.get(fallback, params=params, headers=request_headers)
+
+
+async def fetch_xml(url: str, params: dict, source_id: str, headers: dict[str, str] | None = None) -> dict:
+    try:
+        response = await _get(url, params, headers)
+        response.raise_for_status()
         root = ET.fromstring(response.text)
         return {root.tag: _compact_xml(root)}
     except httpx.HTTPStatusError as exc:
@@ -51,11 +77,10 @@ async def fetch_xml(url: str, params: dict, source_id: str) -> dict:
         raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, source_id) from exc
 
 
-async def fetch_json(url: str, params: dict, source_id: str) -> dict:
+async def fetch_json(url: str, params: dict, source_id: str, headers: dict[str, str] | None = None) -> dict:
     try:
-        async with httpx.AsyncClient(timeout=18) as client:
-            response = await client.get(url, params=params)
-            response.raise_for_status()
+        response = await _get(url, params, headers)
+        response.raise_for_status()
         data = response.json()
     except httpx.HTTPStatusError as exc:
         raise PublicDataError(f"제공기관 응답 오류: {_upstream_message(exc.response)}", 502, source_id) from exc
@@ -86,6 +111,13 @@ class PublicApiClient:
     def __init__(self, settings: Settings):
         self.settings = settings
 
+    def vworld_headers(self) -> dict[str, str]:
+        referer = self.settings.vworld_referer.rstrip("/") + "/"
+        return {
+            "Origin": referer.rstrip("/"),
+            "Referer": referer,
+        }
+
     def require_data_key(self, source_id: str) -> str:
         if not self.settings.data_go_kr_service_key:
             raise PublicDataError("DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.", 503, source_id)
@@ -111,7 +143,7 @@ class PublicApiClient:
             "query": query,
             "key": key,
         }
-        return await fetch_json("https://api.vworld.kr/req/search", params, "D12")
+        return await fetch_json("https://api.vworld.kr/req/search", params, "D12", self.vworld_headers())
 
     async def cadastral_by_point(self, lon: float, lat: float) -> dict:
         key = self.require_vworld_key()
@@ -125,7 +157,7 @@ class PublicApiClient:
             "size": 10,
             "key": key,
         }
-        return await fetch_json("https://api.vworld.kr/req/data", params, "D12")
+        return await fetch_json("https://api.vworld.kr/req/data", params, "D12", self.vworld_headers())
 
     async def mountain_weather(self, obsid: str | None = None, local_area: str | None = None) -> dict:
         key = self.require_data_key("D7")

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
     data_go_kr_service_key: str | None = Field(default=None, alias="DATA_GO_KR_SERVICE_KEY")
     vworld_api_key: str | None = Field(default=None, alias="VWORLD_API_KEY")
+    vworld_referer: str = Field(default="https://gruplan-ai.onrender.com", alias="VWORLD_REFERER")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-5.4-mini", alias="OPENAI_MODEL")
     fire_risk_endpoint: str | None = Field(default=None, alias="FIRE_RISK_ENDPOINT")
