@@ -139,6 +139,8 @@
       top: 34px;
       width: min(760px, calc(100% - 68px));
       color: var(--white);
+      pointer-events: none;
+      user-select: none;
     }
     .eyebrow {
       display: inline-flex;
@@ -193,6 +195,8 @@
       border: 1px solid rgba(255,255,255,.52);
       border-radius: 12px;
       box-shadow: var(--shadow);
+      pointer-events: auto;
+      user-select: auto;
     }
     .searchDock label {
       display: flex;
@@ -257,6 +261,7 @@
       border-radius: 12px;
       background: rgba(16,38,21,.8);
       backdrop-filter: blur(12px);
+      user-select: none;
     }
     .mapTools button {
       width: auto;
@@ -291,6 +296,8 @@
       border-radius: 12px;
       overflow: hidden;
       box-shadow: var(--shadow);
+      pointer-events: none;
+      user-select: none;
     }
     .sourceRailItem {
       min-height: 74px;
@@ -1374,7 +1381,7 @@
       <div class="mapHeader">
         <div class="eyebrow heroReveal"><i data-lucide="map-pin" class="icon"></i> Forest Parcel Intelligence</div>
         <h1 class="heroReveal"><span>내 산의 경영 방향을</span><span>필지 단위로 판단합니다</span></h1>
-        <p class="heroReveal">연속지적도와 산림공간정보, 산불 위험, 산악기상, 탄소상쇄, 산림사업법인 데이터를 한 번의 분석 흐름으로 연결합니다.</p>
+        <p class="heroReveal">연속지적도와 산림공간정보, 산불 위험, 산악기상, 탄소상쇄, 산림사업법인<br>데이터를 한 번의 분석 흐름으로 연결합니다.</p>
         <div class="searchDock heroReveal">
           <label>
             <i data-lucide="search" class="icon"></i>
