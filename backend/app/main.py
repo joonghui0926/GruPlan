@@ -147,6 +147,7 @@ FGIS_LAYER_CONFIG = {
     "economicNational": ("TB_FGDI_C_FS_EN100", "economic_forest_zones"),
     "economicPrivate": ("TB_FGDI_C_FS_EN200", "economic_forest_zones"),
 }
+FGIS_LIVE_SOURCE_IDS = {"D1", "D2", "D3", "D5", "D8"}
 
 
 def _public_error(exc: PublicDataError) -> dict:
@@ -206,7 +207,7 @@ async def data_sources():
             if source.table_name not in loaded_tables:
                 status = "스키마 확인 필요"
             elif not row_count:
-                status = "원천 데이터 0건"
+                status = "실시간 공간 조회 연결" if source.id in FGIS_LIVE_SOURCE_IDS else "원천 데이터 0건"
             else:
                 status = f"공간 DB 적재 완료 · {row_count:,}건"
         if source.requires_key:
