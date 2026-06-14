@@ -2415,6 +2415,14 @@
     }
 
     function scenarioProfile(name = "") {
+      if (name.includes("기초조사")) {
+        return {
+          icon: "clipboard-check",
+          color: "#3f6b42",
+          background: "linear-gradient(90deg, rgba(63,107,66,.18), rgba(63,107,66,0))",
+          message: "경계와 면적은 잡혔지만 작업로, 경사, 수종, 위험 구간을 먼저 채워야 경영 방향이 정확해집니다."
+        };
+      }
       if (name.includes("수익")) {
         return {
           icon: "trending-up",
@@ -2515,7 +2523,7 @@
     async function loadWeather() {
       startLiveLoading("weatherBtn", "cloud-sun", "산악기상 생성 중", "관측 응답을 작업 위험 항목으로 정리하고 있습니다.");
       try {
-        const data = await api(`/api/live/mountain-weather${queryString({ localArea: selectedAreaKeyword() })}`);
+        const data = await api(`/api/live/mountain-weather${queryString({ localArea: selectedMountainAreaCode() })}`);
         renderLiveItems("liveView", "cloud-sun", "산악기상", data, ["localArea", "obsid", "tm", "ta", "temp", "hm", "ws", "wd", "rn", "pa", "ts"]);
       } catch (error) {
         showApiError(error, "D7", "liveView");
@@ -2528,7 +2536,7 @@
       startLiveLoading("fireBtn", "flame", "산불위험 생성 중", "산불위험 예보를 필지 판단에 쓸 수 있는 항목으로 바꾸고 있습니다.");
       try {
         const data = await api(`/api/live/fire-risk${queryString({ sigunguCode: selectedSigunguCode() })}`);
-        renderLiveItems("liveView", "flame", "산불위험", data, ["analdate", "date", "region", "sigun", "sigungu", "meanavg", "maxi", "risk", "level", "value"]);
+        renderLiveItems("liveView", "flame", "산불위험", data, ["analdate", "doname", "sigun", "meanavg", "maxi", "d3", "d4", "regioncode", "sigucode"]);
       } catch (error) {
         showApiError(error, "D6", "liveView");
       } finally {
@@ -2541,7 +2549,7 @@
       try {
         const data = await api("/api/forest-companies");
         const filtered = filterItemsByKeyword(data, selectedAreaKeyword());
-        renderLiveItems("liveView", "building-2", filtered.length ? "산림사업법인 지역 후보" : "산림사업법인", filtered.length ? filtered : data, ["tradeName", "tradeNm", "companyName", "corpNm", "addr", "address", "tel", "phone", "captain", "bizType"]);
+        renderLiveItems("liveView", "building-2", filtered.length ? "산림사업법인 지역 후보" : "산림사업법인", filtered.length ? filtered : data, ["tradeName", "tradename", "tradeNm", "companyName", "corpNm", "captain", "address", "specnm", "technics", "status"]);
       } catch (error) {
         showApiError(error, "D10", "liveView");
       } finally {
@@ -2553,7 +2561,7 @@
       startLiveLoading("statsBtn", "bar-chart-3", "자원통계 생성 중", "자원 통계 응답을 시장성과 비교 가능한 항목으로 정리하고 있습니다.");
       try {
         const data = await api("/api/resource-stats");
-        renderLiveItems("liveView", "bar-chart-3", "산림자원통계", data, ["clsscNm", "classNm", "itmNm", "itemNm", "unit", "year", "value", "dataValue"]);
+        renderLiveItems("liveView", "bar-chart-3", "산림자원통계", data, ["statClsscNm", "statNm", "statClsscId", "statSeq", "clsscNm", "classNm", "itmNm", "itemNm"]);
       } catch (error) {
         showApiError(error, "D11", "liveView");
       } finally {
@@ -2586,6 +2594,11 @@
       const text = state.analysis?.parcel?.adminName || state.analysis?.parcel?.address || document.getElementById("addrText").textContent || "";
       const matches = String(text).match(/[가-힣]+(?:시|군|구)/g);
       return matches?.length ? matches[matches.length - 1] : "";
+    }
+
+    function selectedMountainAreaCode() {
+      const value = state.analysis?.parcel?.mountainAreaCode || "";
+      return /^\d+$/.test(String(value)) ? String(value) : "";
     }
 
     function selectedSigunguCode() {
@@ -2639,7 +2652,7 @@
       const target = document.getElementById(targetId);
       const items = Array.isArray(data) ? data : extractItems(data);
       if (!items.length) {
-        renderNotice(targetId, iconName, `${title} 조회 결과 없음`, "제공기관 응답에 표시할 항목이 없습니다.");
+        renderNotice(targetId, iconName, `${title} 결과 없음`, data?.notice || "현재 조건에 맞는 항목을 찾지 못했습니다.");
         return;
       }
       const rows = items.slice(0, 6).map((item, index) => {
@@ -2786,10 +2799,18 @@
         region: "지역",
         sigun: "시군",
         sigungu: "시군구",
+        doname: "시도",
+        meanavg: "평균위험",
+        maxi: "최대위험",
+        d3: "높음면적",
+        d4: "매우높음면적",
+        regioncode: "지역코드",
+        sigucode: "시군구코드",
         risk: "위험도",
         level: "등급",
         value: "값",
         tradeName: "법인명",
+        tradename: "법인명",
         tradeNm: "법인명",
         companyName: "법인명",
         corpNm: "법인명",
@@ -2798,8 +2819,14 @@
         tel: "전화",
         phone: "전화",
         captain: "대표",
+        specnm: "사업종류",
+        technics: "기술능력",
         bizType: "업종",
         clsscNm: "분류",
+        statClsscNm: "분류",
+        statClsscId: "분류ID",
+        statNm: "통계명",
+        statSeq: "통계번호",
         classNm: "분류",
         itmNm: "항목",
         itemNm: "항목",
@@ -2877,10 +2904,14 @@
     function extractErrorMessage(error) {
       if (!error) return "제공기관 응답과 환경변수 설정을 확인해주세요.";
       if (typeof error === "string") return error;
+      const text = JSON.stringify(error);
+      if (text.includes("FIRE_RISK_ENDPOINT") || text.includes("not well-formed") || text.includes("invalid token") || text.includes("Forbidden")) {
+        return "제공기관 응답 상태를 확인하는 동안, 현재 화면은 필지 공간분석 결과를 우선 사용합니다.";
+      }
       if (error.message) return error.message;
       if (error.detail?.message) return error.detail.message;
       if (typeof error.detail === "string") return error.detail;
-      return "제공기관 응답과 환경변수 설정을 확인해주세요.";
+      return "제공기관 응답을 현재 화면에 맞게 정리하지 못했습니다.";
     }
 
     function renderNotice(targetId, iconName, title, detail, tableMode = false) {

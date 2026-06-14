@@ -400,6 +400,11 @@ def _first_vworld_point(search: dict) -> dict | None:
 
 def _work_plan(scores: dict) -> list[dict]:
     scenario = scores.get("recommendedScenario")
+    if scenario == "기초조사 우선":
+        return [
+            {"title": "현장 기본값 채우기", "reason": "임도 거리, 경사, 수종, 영급, 배수 흔적을 먼저 확인", "season": "첫 방문"},
+            {"title": "확인값 반영 후 재분석", "reason": "수익형, 탄소형, 보전형 중 실행 방향을 다시 비교", "season": "상담 전"},
+        ]
     if scenario == "수익형 경영":
         return [
             {"title": "임도 접근성 기반 작업 구역 확정", "reason": "운반비와 장비 진입성 우선 확인", "season": "봄"},
@@ -440,21 +445,45 @@ def _scenario_reasons(features: FeatureSet, scores: dict) -> list[dict]:
     area = features.area_ha or 0
     age = features.stand_age_class or 0
     planting = features.planting_fit_count or 0
-    economic = "경제림 구역에 포함" if features.economic_forest else "경제림 구역 근거 없음"
+    economic = "경제림 구역에 포함" if features.economic_forest else "경제림 구역 미포함"
     road = _format_meters(features.road_distance_m)
     slope = _format_degree(features.slope_degree)
     landslide = _format_grade(features.avg_landslide_grade)
     density = _format_density(features.road_density_m_per_ha)
+    gaps = _gap_text(scores)
+    access_ready = features.road_distance_m is not None and features.slope_degree is not None
+    disaster_ready = features.avg_landslide_grade is not None or features.high_landslide_ratio is not None
+    stand_ready = features.stand_age_class is not None
+    profit_judgement = (
+        f"이 필지는 {economic}이고 조림 후보가 {planting}건입니다. 임도 거리 {road}, 임도 밀도 {density}, 경사 {slope}가 함께 들어가 접근성 {round(access)}점으로 계산됐습니다."
+        if access_ready
+        else f"수익형은 작업로와 운반 동선이 핵심인데, 이 필지는 {gaps} 확보가 먼저입니다. 현재 {round(scores.get('profit', 0) or 0)}점은 경제림 여부와 조림 후보만 반영한 예비값이며, 임도 거리와 경사가 들어오면 가장 크게 바뀝니다."
+    )
+    carbon_judgement = (
+        f"면적 {round(area, 2)}ha와 영급 {age}이 장기 흡수 관리 점수를 만들었습니다. 면적 기여는 {round(min(area * 1.6, 14), 1)}점, 영급 기여는 {round(min(age * 3.5, 22), 1)}점입니다."
+        if stand_ready
+        else f"면적 {round(area, 2)}ha는 확인됐지만 영급과 수종 근거가 아직 비어 있습니다. 탄소형 {round(scores.get('carbon', 0) or 0)}점은 면적만 반영한 출발값이고, 실제 등록성은 영급·수종·제외면적 산정 뒤에 좁혀야 합니다."
+    )
+    conservation_judgement = (
+        f"산사태 평균등급은 {landslide}, 경사는 {slope}입니다. 이 조합이 보전형 {round(scores.get('conservation', 0) or 0)}점을 만들었고, 급경사나 위험 격자가 겹치는 구역은 별도 관리 대상으로 봅니다."
+        if disaster_ready and features.slope_degree is not None
+        else f"보전형은 경사와 산사태 위험이 핵심인데, 현재는 {gaps} 확보가 필요합니다. 그래서 보전형 {round(scores.get('conservation', 0) or 0)}점은 안전 판정이 아니라 계곡부·급경사·배수 흔적을 먼저 확인하라는 신호입니다."
+    )
+    resilience_judgement = (
+        f"재난위험 {round(disaster)}점과 접근성 {round(access)}점이 함께 들어갔습니다. 위험이 있고 접근이 어려운 구간은 장마 전 배수와 임도 유실 점검을 앞순위로 둡니다."
+        if disaster_ready and access_ready
+        else f"재난저감형은 산사태 위험, 산불위험, 접근 동선을 같이 봐야 합니다. 현재 {round(scores.get('resilience', 0) or 0)}점은 면적과 확인된 일부 항목만 반영한 예비값이며, 물길·임도·사면 하단을 먼저 확인해야 합니다."
+    )
 
     rows = [
         {
             "scenario": "수익형",
             "score": scores.get("profit", 0),
-            "judgement": f"이 필지는 {economic}이고 조림 후보가 {planting}건입니다. 임도 거리는 {road}, 임도 밀도는 {density}, 경사는 {slope}로 계산되어 접근성 {round(access)}점이 수익형 점수의 상한을 정했습니다.",
+            "judgement": profit_judgement,
             "drivers": [
                 f"경제림 여부: {economic}",
                 f"조림 후보: {planting}건",
-                f"접근성: {round(access)}점",
+                f"작업 동선: {road} / 경사 {slope}",
             ],
             "nextCheck": "작업로 실제 통행, 벌채와 운반 동선, 사업비 대비 수익성을 현장 견적으로 확인합니다.",
             "sourceIds": ["D1", "D3", "D4", "D8"],
@@ -462,11 +491,11 @@ def _scenario_reasons(features: FeatureSet, scores: dict) -> list[dict]:
         {
             "scenario": "탄소형",
             "score": scores.get("carbon", 0),
-            "judgement": f"면적 {round(area, 2)}ha와 영급 {age if age else '미확인'}이 장기 흡수 관리 점수를 만들었습니다. 현재 산식에서는 면적 기여가 {round(min(area * 2, 16), 1)}점, 영급 기여가 {round(min(age * 4, 24), 1)}점으로 들어갔습니다.",
+            "judgement": carbon_judgement,
             "drivers": [
                 f"면적: {round(area, 2)}ha",
                 f"영급: {age if age else '확인 필요'}",
-                "등록 사례 유사도: 원천 사례 적재 후 보정",
+                "제외면적: 현장 산정 필요",
             ],
             "nextCheck": "수종, 영급, 제외 면적을 보정한 뒤 산림탄소상쇄 등록 사례와 유사 면적을 비교합니다.",
             "sourceIds": ["D1", "D9", "D12"],
@@ -474,11 +503,11 @@ def _scenario_reasons(features: FeatureSet, scores: dict) -> list[dict]:
         {
             "scenario": "보전형",
             "score": scores.get("conservation", 0),
-            "judgement": f"산사태 평균등급은 {landslide}, 경사는 {slope}입니다. 재난위험 {round(disaster)}점과 경사 페널티가 낮게 계산되면 보전형 점수는 다른 방향보다 낮게 나옵니다.",
+            "judgement": conservation_judgement,
             "drivers": [
-                f"재난위험: {round(disaster)}점",
                 f"경사: {slope}",
                 f"산사태 평균등급: {landslide}",
+                f"배수·계곡부: 현장 확인",
             ],
             "nextCheck": "계곡부, 급경사 경계, 배수 불량 지점이 일부라도 있으면 해당 구역만 보전 구역으로 분리합니다.",
             "sourceIds": ["D2", "D5"],
@@ -486,11 +515,11 @@ def _scenario_reasons(features: FeatureSet, scores: dict) -> list[dict]:
         {
             "scenario": "재난저감",
             "score": scores.get("resilience", 0),
-            "judgement": f"재난위험 {round(disaster)}점에 접근성 역점수가 더해졌습니다. 접근성이 낮을수록 사전 점검 필요성이 올라가며, 이 필지는 면적 {round(area, 2)}ha가 저감 작업 규모 판단에 반영됐습니다.",
+            "judgement": resilience_judgement,
             "drivers": [
                 f"재난위험: {round(disaster)}점",
-                f"접근성 역점수: {round(100 - access)}점",
-                f"면적 보정: {round(min(area * 2, 18), 1)}점",
+                f"진입 동선: {road}",
+                f"면적: {round(area, 2)}ha",
             ],
             "nextCheck": "장마 전 배수, 임도 유실, 산불 진입 동선을 먼저 확인하고 위험 구간별 작업 순서를 나눕니다.",
             "sourceIds": ["D4", "D5", "D6", "D12"],
@@ -516,6 +545,45 @@ def _scenario_plan(features: FeatureSet, scores: dict, raw_features: dict) -> di
     disaster = scores.get("disasterRisk", 0) or 0
     road = _format_meters(features.road_distance_m)
     slope = _format_degree(features.slope_degree)
+
+    if scores.get("recommendedScenario") == "기초조사 우선":
+        top_name = "기초조사 우선"
+        top_score = ranked[0][1]
+        thesis = (
+            f"이 필지는 면적 {round(area, 2)}ha와 경계는 잡혔지만 {_gap_text(scores)} 확보가 먼저입니다. "
+            "지금 바로 수익형이나 탄소형으로 확정하기보다, 하루 현장 확인으로 작업로·수종·위험 구간을 채운 뒤 다시 점수를 계산하는 편이 맞습니다."
+        )
+        context = [
+            f"주변 250m 안의 필지는 {nearby_parcels}개, 500m 안의 임도 요소는 {nearby_roads}개입니다.",
+            f"현재 잠정 1순위 점수는 {ranked[0][0]} {round(ranked[0][1])}점이지만, 누락된 핵심 근거가 들어오면 순위가 바뀔 수 있습니다.",
+            "작은 필지일수록 전체 사업보다 진입 동선, 제외 면적, 관리 가능한 구역을 먼저 나누는 것이 비용을 줄입니다.",
+        ]
+        ideas = [
+            "필지를 세 구역으로 나눕니다: 접근 가능한 관리 구역, 손대지 않는 보전 구역, 경계와 물길 확인 구역.",
+            "첫 방문에서는 벌채 가능성보다 작업로, 경사 체감, 물길, 수종, 고사목을 한 장의 현장 체크표로 채웁니다.",
+            "조사 뒤 수익형, 탄소형, 보전형 중 하나로 확정하지 말고 두 개의 혼합안까지 비교합니다.",
+        ]
+        phases = [
+            {"name": "1단계 지도 보정", "actions": ["필지 경계와 실제 진입 위치 확인", "임도와 차량 접근 가능 지점 표시", "계곡부와 배수 흐름 표시"]},
+            {"name": "2단계 현장 체크", "actions": ["대표 수종과 영급 확인", "경사와 장비 투입 가능성 기록", "산사태 흔적과 임도 유실 여부 확인"]},
+            {"name": "3단계 재분석", "actions": ["확인값을 넣어 시나리오 재계산", "작업 구역과 제외 구역 분리", "법인 상담용 요청 범위 작성"]},
+        ]
+        risks = [
+            "임도 거리나 경사가 비어 있는 상태에서 사업비를 말하면 실제 견적과 크게 달라질 수 있습니다.",
+            "산사태 위험이 확인되지 않았다고 안전한 필지로 보면 안 됩니다.",
+            "영급과 수종이 비어 있으면 탄소형 판단은 등록 가능성보다 조사 후보 수준으로 봐야 합니다.",
+        ]
+        return {
+            "scenario": top_name,
+            "score": top_score,
+            "secondScenario": second_name,
+            "margin": margin,
+            "thesis": thesis,
+            "context": context,
+            "ideas": ideas,
+            "phases": phases,
+            "risks": risks,
+        }
 
     common_context = [
         f"추천 점수는 {top_name} {round(top_score)}점이며, 다음 후보인 {second_name}보다 {margin}점 높습니다.",
@@ -622,13 +690,13 @@ def _source_parcel_evidence(source_id: str, features: FeatureSet, scores: dict) 
     density = _format_density(features.road_density_m_per_ha)
     data = {
         "D1": [
-            f"영급 {age if age is not None else '미확인'}이 탄소형 점수에 {round(min((age or 0) * 4, 24), 1)}점 기여했습니다.",
-            f"현재 탄소형 {round(scores.get('carbon', 0) or 0)}점은 임상 정보와 면적 {round(area, 2)}ha가 함께 만든 결과입니다.",
+            f"영급은 {age if age is not None else '현장 확인 대상'}입니다. 영급이 확인되면 탄소형과 수익형 판단이 가장 크게 보정됩니다.",
+            f"현재 탄소형 {round(scores.get('carbon', 0) or 0)}점은 면적 {round(area, 2)}ha와 확인된 임상 속성만 반영한 값입니다.",
             "수종과 수관밀도 원천 속성이 적재되면 장기 관리와 벌채 가능성 문장을 더 좁힐 수 있습니다.",
         ],
         "D2": [
-            f"경사 {slope}가 접근성 산식에서 페널티로 작용했습니다.",
-            f"이 경사 조건 때문에 접근성은 {round(access)}점으로 계산됐고, 보전형은 {round(scores.get('conservation', 0) or 0)}점에 머물렀습니다.",
+            f"경사는 {slope}입니다. 값이 확인되면 접근성, 보전형, 재난저감형 판단이 함께 보정됩니다.",
+            f"현재 접근성 {round(access)}점은 확인된 임도 정보와 경사 정보를 반영한 작업 동선 점수입니다.",
             "토심과 토성은 조림 후보 검토의 보정값으로 읽히며, 실제 장비 진입 전 현장 확인이 필요합니다.",
         ],
         "D3": [
@@ -638,13 +706,13 @@ def _source_parcel_evidence(source_id: str, features: FeatureSet, scores: dict) 
         ],
         "D4": [
             f"가까운 임도 거리는 {road}, 필지 내부 임도 밀도는 {density}입니다.",
-            f"이 값들이 접근성 {round(access)}점과 재난저감 {round(scores.get('resilience', 0) or 0)}점에 동시에 들어갔습니다.",
+            f"임도 거리가 확인되면 수익형의 운반비 판단과 재난저감형의 긴급 진입 동선 판단이 함께 좁혀집니다.",
             "임도 상태가 실제 차량 통행에 맞지 않으면 수익형 점수는 현장 보정에서 낮아질 수 있습니다.",
         ],
         "D5": [
-            f"산사태 평균등급은 {landslide}로 읽혔고 재난위험은 {round(disaster)}점입니다.",
-            f"재난위험이 높아질수록 보전형 {round(scores.get('conservation', 0) or 0)}점과 재난저감 {round(scores.get('resilience', 0) or 0)}점이 올라갑니다.",
-            "위험이 낮게 나와도 계곡부와 임도 절개지는 별도 구간으로 분리해서 봐야 합니다.",
+            f"산사태 평균등급은 {landslide}입니다. 값이 비어 있으면 안전하다는 뜻이 아니라 위험 구간 산정 전 상태입니다.",
+            f"재난위험 항목은 현재 {round(disaster)}점으로 표시되며, 산사태 격자와 산불위험 지수가 들어오면 재난저감형 판단이 보정됩니다.",
+            "계곡부와 임도 절개지는 점수와 별개로 별도 구간으로 분리해서 봐야 합니다.",
         ],
         "D8": [
             "경제림 구역 포함 여부는 수익형 생산성 점수에 직접 반영됩니다.",
@@ -654,7 +722,7 @@ def _source_parcel_evidence(source_id: str, features: FeatureSet, scores: dict) 
         "D12": [
             f"필지 경계에서 면적 {round(area, 2)}ha가 계산됐고, 이 값이 탄소형과 재난저감형의 면적 보정에 들어갔습니다.",
             "같은 지번이라도 경계가 달라지면 임도 거리, 위험도, 임상 교차 결과가 모두 바뀝니다.",
-            f"이번 추천 방향은 {scores.get('recommendedScenario', '확인 필요')}이며, 경계 정확도가 전체 판단의 출발점입니다.",
+            f"이번 분석 상태는 {scores.get('recommendedScenario', '확인 필요')}이며, 경계 정확도가 전체 판단의 출발점입니다.",
         ],
     }
     return data.get(source_id, [])
@@ -682,6 +750,13 @@ def _format_density(value: float | None) -> str:
     if value is None:
         return "확인 필요"
     return f"{round(value, 1)}m/ha"
+
+
+def _gap_text(scores: dict) -> str:
+    gaps = scores.get("dataGaps") or []
+    if not gaps:
+        return "핵심 근거"
+    return ", ".join(gaps)
 
 
 def _source_analysis_detail(source_id: str) -> dict:
@@ -829,6 +904,21 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
     area_bonus = round(min((features.area_ha or 0) * 1.6, 14), 1)
     carbon_age_bonus = round(min((features.stand_age_class or 0) * 3.5, 22), 1)
     resilience_area_bonus = round(min((features.area_ha or 0) * 2, 18), 1)
+    access_interpretation = (
+        f"임도 거리 {_format_meters(features.road_distance_m)}에서 {road_score}점, 경사 {_format_degree(features.slope_degree)}에서 감점 {slope_cost}점, 임도 밀도 보정 {road_bonus}점이 반영되어 접근성은 {round(scores.get('accessibility', 0) or 0)}점입니다."
+        if features.road_distance_m is not None and features.slope_degree is not None
+        else f"접근성은 임도 거리와 경사가 핵심인데 현재 {_gap_text(scores)} 확보가 먼저입니다. 지금 값은 작업로 판단 전 예비값이며, 임도 실거리와 장비 진입 가능 지점이 들어오면 수익형 점수가 크게 바뀝니다."
+    )
+    disaster_interpretation = (
+        f"산사태 평균등급 {_format_grade(features.avg_landslide_grade)}와 산불위험 지수 {_format_grade(features.fire_risk_index)}가 반영되어 재난위험은 {round(scores.get('disasterRisk', 0) or 0)}점입니다."
+        if features.avg_landslide_grade is not None or features.fire_risk_index is not None
+        else "산사태와 산불위험 값이 아직 비어 있습니다. 이 상태는 안전 판정이 아니며, 계곡부·사면 하단·임도 절개지를 먼저 확인해야 합니다."
+    )
+    carbon_interpretation = (
+        f"면적 {round(features.area_ha or 0, 2)}ha가 {area_bonus}점, 영급 {features.stand_age_class}이 {carbon_age_bonus}점 기여했습니다. 접근성과 재난위험이 좋지 않으면 장기 관리 비용을 반영해 감점됩니다."
+        if features.stand_age_class is not None
+        else f"면적 {round(features.area_ha or 0, 2)}ha는 반영됐지만 영급과 수종이 아직 비어 있습니다. 탄소형 {round(scores.get('carbon', 0) or 0)}점은 등록 가능성 확정이 아니라 기준선 산정 전 후보값입니다."
+    )
     return {
         "method": "공공데이터 검색 체인과 가중치 기반 설명",
         "retrievalChain": [
@@ -848,7 +938,7 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
                     "roadDensityMPerHa": features.road_density_m_per_ha,
                     "slopeDegree": features.slope_degree,
                 },
-                "interpretation": f"이 필지는 임도 거리 { _format_meters(features.road_distance_m) }에서 {road_score}점을 받았고, 경사 { _format_degree(features.slope_degree) } 때문에 {slope_cost}점이 깎였습니다. 임도 밀도 보정 {road_bonus}점까지 더해 접근성은 {round(scores.get('accessibility', 0) or 0)}점입니다.",
+                "interpretation": access_interpretation,
             },
             {
                 "metric": "재난위험",
@@ -860,7 +950,7 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
                     "highLandslideRatio": features.high_landslide_ratio,
                     "fireRiskIndex": features.fire_risk_index,
                 },
-                "interpretation": f"산사태 평균등급은 {_format_grade(features.avg_landslide_grade)}이고 산불위험 지수는 {_format_grade(features.fire_risk_index)}입니다. 그 결과 재난위험은 {round(scores.get('disasterRisk', 0) or 0)}점으로 계산되어 재난저감형과 보전형 점수의 바닥값을 만들었습니다.",
+                "interpretation": disaster_interpretation,
             },
             {
                 "metric": "수익형",
@@ -872,7 +962,7 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
                     "plantingFitCount": features.planting_fit_count,
                     "standAgeClass": features.stand_age_class,
                 },
-                "interpretation": f"경제림 판정은 {'포함' if features.economic_forest else '미포함'}이고 조림 후보는 {features.planting_fit_count or 0}건입니다. 접근성 {round(scores.get('accessibility', 0) or 0)}점과 재난위험 {round(scores.get('disasterRisk', 0) or 0)}점이 함께 들어가 수익형은 {round(scores.get('profit', 0) or 0)}점입니다.",
+                "interpretation": f"경제림 판정은 {'포함' if features.economic_forest else '미포함'}이고 조림 후보는 {features.planting_fit_count or 0}건입니다. 수익형 {round(scores.get('profit', 0) or 0)}점은 생산 조건과 작업 동선을 함께 본 값이며, 임도와 경사가 비어 있으면 사업비 판단 전 후보값으로 봅니다.",
             },
             {
                 "metric": "탄소형",
@@ -884,7 +974,7 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
                     "standAgeClass": features.stand_age_class,
                     "carbonCaseSimilarity": features.carbon_case_similarity,
                 },
-                "interpretation": f"면적 {round(features.area_ha or 0, 2)}ha가 {area_bonus}점, 영급 {features.stand_age_class or '미확인'}이 {carbon_age_bonus}점 기여했습니다. 재난위험이 높거나 접근성이 낮으면 유지관리 비용을 반영해 감점되며, 최종 탄소형은 {round(scores.get('carbon', 0) or 0)}점입니다.",
+                "interpretation": carbon_interpretation,
             },
             {
                 "metric": "보전형",
@@ -895,7 +985,7 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
                     "slopeDegree": features.slope_degree,
                     "avgLandslideGrade": features.avg_landslide_grade,
                 },
-                "interpretation": f"경사 페널티 {slope_cost}점과 재난위험 {round(scores.get('disasterRisk', 0) or 0)}점이 보전형을 구성했습니다. 이 필지의 보전형 {round(scores.get('conservation', 0) or 0)}점은 급경사나 위험 구간을 별도 관리할 필요가 어느 정도인지 보여줍니다.",
+                "interpretation": f"보전형 {round(scores.get('conservation', 0) or 0)}점은 경사와 재난위험이 확인될수록 의미가 선명해집니다. 현재 경사 {_format_degree(features.slope_degree)}, 산사태 {_format_grade(features.avg_landslide_grade)} 상태이므로 계곡부와 급경사 경계 확인을 먼저 둡니다.",
             },
             {
                 "metric": "재난저감형",
@@ -907,7 +997,7 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
                     "roadDistanceM": features.road_distance_m,
                     "avgLandslideGrade": features.avg_landslide_grade,
                 },
-                "interpretation": f"재난위험 {round(scores.get('disasterRisk', 0) or 0)}점, 접근성 역점수 {round(100 - (scores.get('accessibility', 0) or 0))}점, 면적 보정 {resilience_area_bonus}점이 합쳐졌습니다. 접근이 어려운데 위험이 있으면 사전 점검과 저감 작업이 앞순위로 올라갑니다.",
+                "interpretation": f"재난저감형 {round(scores.get('resilience', 0) or 0)}점은 면적 보정 {resilience_area_bonus}점과 접근 동선, 위험 지표를 함께 봅니다. 위험값이 비어 있으면 배수와 임도 유실 확인을 먼저 배치합니다.",
             },
         ],
     }

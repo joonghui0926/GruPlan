@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from json import JSONDecodeError
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -69,12 +69,16 @@ async def fetch_xml(url: str, params: dict, source_id: str, headers: dict[str, s
     try:
         response = await _get(url, params, headers)
         response.raise_for_status()
+        if response.text.lstrip().startswith(("<html", "<!DOCTYPE html", "{")):
+            raise PublicDataError(_friendly_upstream_message(source_id, response), 502, source_id)
         root = ET.fromstring(response.text)
         return {root.tag: _compact_xml(root)}
     except httpx.HTTPStatusError as exc:
-        raise PublicDataError(f"제공기관 응답 오류: {_upstream_message(exc.response)}", 502, source_id) from exc
-    except (httpx.HTTPError, ET.ParseError) as exc:
-        raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, source_id) from exc
+        raise PublicDataError(_friendly_upstream_message(source_id, exc.response), 502, source_id) from exc
+    except ET.ParseError as exc:
+        raise PublicDataError("제공기관 응답 형식이 달라 항목을 표시하지 못했습니다.", 502, source_id) from exc
+    except httpx.HTTPError as exc:
+        raise PublicDataError("제공기관 연결이 지연되고 있습니다.", 502, source_id) from exc
 
 
 async def fetch_json(url: str, params: dict, source_id: str, headers: dict[str, str] | None = None) -> dict:
@@ -83,7 +87,7 @@ async def fetch_json(url: str, params: dict, source_id: str, headers: dict[str, 
         response.raise_for_status()
         data = response.json()
     except httpx.HTTPStatusError as exc:
-        raise PublicDataError(f"제공기관 응답 오류: {_upstream_message(exc.response)}", 502, source_id) from exc
+        raise PublicDataError(_friendly_upstream_message(source_id, exc.response), 502, source_id) from exc
     except (httpx.HTTPError, JSONDecodeError) as exc:
         raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, source_id) from exc
 
@@ -105,6 +109,20 @@ def _provider_error_message(data: dict) -> str | None:
         if text:
             return f"제공기관 응답 오류: {text}"
     return "제공기관 응답 오류"
+
+
+def _friendly_upstream_message(source_id: str, response: httpx.Response) -> str:
+    if response.status_code in {401, 403}:
+        return {
+            "D6": "산불위험예보는 제공기관 승인 상태 확인 후 표시됩니다. 현재 재난 판단은 공간분석 결과를 우선 사용합니다.",
+            "D10": "산림사업법인 목록은 제공기관 승인 상태 확인 후 표시됩니다. 현재는 작업 종류와 지역 조건을 상담 준비 항목으로 남깁니다.",
+            "D11": "산림자원통계는 제공기관 승인 상태 확인 후 표시됩니다. 현재 경영 판단은 필지 공간분석 결과를 우선 사용합니다.",
+        }.get(source_id, "제공기관 승인 상태 확인 후 항목을 표시합니다.")
+    return {
+        "D6": "산불위험예보 응답이 지연되고 있습니다. 현재 재난 판단은 공간분석 결과를 우선 사용합니다.",
+        "D10": "산림사업법인 응답이 지연되고 있습니다. 현재는 상담 준비 항목만 정리합니다.",
+        "D11": "산림자원통계 응답이 지연되고 있습니다. 현재 경영 판단은 필지 공간분석 결과를 우선 사용합니다.",
+    }.get(source_id, f"제공기관 응답을 현재 화면에 맞게 정리하지 못했습니다.")
 
 
 class PublicApiClient:
@@ -178,13 +196,13 @@ class PublicApiClient:
         }
         if obsid:
             params["obsid"] = obsid
-        if local_area:
+        if local_area and str(local_area).isdigit():
             params["localArea"] = local_area
         return await fetch_json("http://apis.data.go.kr/1400377/mtweather/mountListSearch", params, "D7")
 
     async def economic_forest(self, search: str | None = None, frst_type: str | None = None) -> dict:
         key = self.require_data_key("D8")
-        params = {"ServiceKey": key, "pageNo": 1, "numOfRows": 20}
+        params = {"serviceKey": key, "pageNo": 1, "numOfRows": 20}
         if search:
             params["searchPlcNm"] = search
         if frst_type:
@@ -193,41 +211,52 @@ class PublicApiClient:
 
     async def forest_companies(self, trade_name: str | None = None, captain: str | None = None) -> dict:
         key = self.require_data_key("D10")
-        params = {"ServiceKey": key, "pageNo": 1, "numOfRows": 20}
+        params = {"serviceKey": key, "pageNo": 1, "numOfRows": 20}
         if trade_name:
             params["tradeName"] = trade_name
         if captain:
             params["captain"] = captain
-        return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/corInfoOpenAPI", params, "D10")
+        try:
+            return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/corInfoOpenAPI", params, "D10")
+        except PublicDataError:
+            return {
+                "items": [],
+                "notice": "산림사업법인 목록은 제공기관 응답 형식 확인 후 다시 표시됩니다. 현재 리포트에서는 작업 종류와 지역 조건만 상담 준비 항목으로 남깁니다.",
+                "sourceId": "D10",
+            }
 
     async def resource_stats(self, class_id: str | None = None) -> dict:
         key = self.require_data_key("D11")
         params = {"serviceKey": key, "pageNo": 1, "numOfRows": 20}
         if class_id:
             params["clsscId"] = class_id
-        return await fetch_json("http://apis.data.go.kr/1400000/frsas1/selectStatList1", params, "D11")
+        try:
+            return await fetch_json("http://apis.data.go.kr/1400000/frsas1/selectStatList1", params, "D11")
+        except PublicDataError:
+            return {
+                "items": [],
+                "notice": "산림자원통계는 제공기관 승인 상태 확인 후 표시됩니다. 현재 경영 판단은 필지 공간분석 결과를 우선 사용합니다.",
+                "sourceId": "D11",
+            }
 
     async def fire_risk(self, **params) -> dict:
         key = self.require_data_key("D6")
-        if not self.settings.fire_risk_endpoint:
-            raise PublicDataError(
-                "산불위험예보 상세 호출 주소는 공공데이터포털 Swagger에서 확인 후 FIRE_RISK_ENDPOINT로 설정해야 합니다.",
-                503,
-                "D6",
-            )
-        query = {"ServiceKey": key, **{k: v for k, v in params.items() if v is not None}}
-        separator = "&" if "?" in self.settings.fire_risk_endpoint else "?"
-        url = self.settings.fire_risk_endpoint + separator + urlencode(query)
-        async with httpx.AsyncClient(timeout=18) as client:
-            try:
-                response = await client.get(url)
-                response.raise_for_status()
-                ctype = response.headers.get("content-type", "")
-                if "json" in ctype:
-                    return response.json()
-                root = ET.fromstring(response.text)
-                return {root.tag: _compact_xml(root)}
-            except httpx.HTTPStatusError as exc:
-                raise PublicDataError(f"제공기관 응답 오류: {_upstream_message(exc.response)}", 502, "D6") from exc
-            except (httpx.HTTPError, ET.ParseError, JSONDecodeError) as exc:
-                raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, "D6") from exc
+        sigungu_code = params.get("sigunguCode")
+        sido_code = params.get("sidoCode")
+        query = {
+            "ServiceKey": key,
+            "pageNo": 1,
+            "numOfRows": 20,
+            "_type": "json",
+            "excludeForecast": 0,
+        }
+        if sigungu_code:
+            url = "https://apis.data.go.kr/1400377/forestPointV2/forestPointListSigunguSearchV2"
+            query["localAreas"] = sigungu_code
+            query["upplocalcd"] = str(sigungu_code)[:2]
+        elif sido_code:
+            url = "https://apis.data.go.kr/1400377/forestPointV2/forestPointListSidoSearchV2"
+            query["localAreas"] = sido_code
+        else:
+            url = "https://apis.data.go.kr/1400377/forestPointV2/forestPointListGeongugSearchV2"
+        return await fetch_json(url, query, "D6")

@@ -9,7 +9,7 @@ def clamp(value: float, low: float = 0, high: float = 100) -> float:
 
 def distance_score(meters: float | None) -> float:
     if meters is None:
-        return 0
+        return 45
     if meters <= 100:
         return 100
     if meters >= 2000:
@@ -19,7 +19,7 @@ def distance_score(meters: float | None) -> float:
 
 def slope_penalty(slope_degree: float | None) -> float:
     if slope_degree is None:
-        return 18
+        return 0
     if slope_degree <= 15:
         return 0
     if slope_degree >= 35:
@@ -29,7 +29,7 @@ def slope_penalty(slope_degree: float | None) -> float:
 
 def landslide_risk_score(avg_grade: float | None, high_risk_ratio: float | None) -> float:
     if avg_grade is None and high_risk_ratio is None:
-        return 0
+        return 45
     grade = avg_grade if avg_grade is not None else 5
     ratio = high_risk_ratio if high_risk_ratio is not None else 0
     grade_component = clamp((6 - grade) * 18)
@@ -85,7 +85,19 @@ def score_features(features: FeatureSet) -> dict:
         "conservation": round(clamp(conservation), 1),
         "resilience": round(clamp(resilience), 1),
     }
-    scores["recommendedScenario"] = max(
+    known = {
+        "필지 면적": features.area_ha is not None,
+        "임도 거리": features.road_distance_m is not None,
+        "경사": features.slope_degree is not None,
+        "산사태 위험": features.avg_landslide_grade is not None or features.high_landslide_ratio is not None,
+        "영급": features.stand_age_class is not None,
+    }
+    evidence_coverage = round(sum(1 for value in known.values() if value) / len(known) * 100)
+    gaps = [label for label, present in known.items() if not present]
+    scores["evidenceCoverage"] = evidence_coverage
+    scores["dataGaps"] = gaps
+    scores["needsFieldCheck"] = evidence_coverage < 60
+    scenario = max(
         {
             "수익형 경영": scores["profit"],
             "탄소형 경영": scores["carbon"],
@@ -99,4 +111,5 @@ def score_features(features: FeatureSet) -> dict:
             "재난저감형 경영": scores["resilience"],
         }[key],
     )
+    scores["recommendedScenario"] = "기초조사 우선" if evidence_coverage < 45 else scenario
     return scores
