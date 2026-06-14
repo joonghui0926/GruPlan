@@ -1911,7 +1911,8 @@
 
     function getPnu(feature) {
       const props = feature.properties || {};
-      return props.pnu || props.PNU || props.gid || null;
+      const value = props.pnu || props.PNU || props.jibunCd || props.JIBUN_CD || null;
+      return /^\d{19}$/.test(String(value || "")) ? String(value) : null;
     }
 
     function renderAnalysis(payload) {

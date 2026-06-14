@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -106,6 +107,11 @@ def _public_error(exc: PublicDataError) -> dict:
     return {"error": {"message": str(exc), "sourceId": exc.source_id}}
 
 
+def _valid_pnu(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    return text if re.fullmatch(r"\d{19}", text) else None
+
+
 @app.get("/")
 async def index():
     html = Path(__file__).resolve().parents[2] / "gruplan.html"
@@ -195,7 +201,7 @@ async def analyze_parcel(payload: AnalysisRequest):
     if row is None:
         raise HTTPException(status_code=404, detail="해당 필지를 찾지 못했습니다.")
 
-    raw_features = dict(row["features"] or {})
+    raw_features = _json_object(row["features"])
     stand_properties = _feature_properties(raw_features, "stand")
     soil_properties = _feature_properties(raw_features, "soil")
     stand_age_class = _extract_int_property(stand_properties, STAND_AGE_KEYS, row["stand_age_class"])
@@ -443,10 +449,20 @@ async def _query_spatial_features(payload: AnalysisRequest):
     """
     geometry = None
     if payload.geometry:
-        import json
-
         geometry = json.dumps(payload.geometry)
-    return await db.fetchrow(sql, payload.pnu, geometry)
+    return await db.fetchrow(sql, _valid_pnu(payload.pnu), geometry)
+
+
+def _json_object(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 
 def _feature_properties(features: dict, key: str) -> dict:
