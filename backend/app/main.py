@@ -382,7 +382,13 @@ async def _table_row_estimates(table_names: set[str]) -> dict[str, int]:
         """,
         list(table_names),
     )
-    return {row["table_name"]: int(row["row_count"] or 0) for row in rows}
+    counts = {row["table_name"]: int(row["row_count"] or 0) for row in rows}
+    for table_name in sorted(table_names):
+        if counts.get(table_name, 0) > 0 or not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", table_name):
+            continue
+        row = await db.fetchrow(f'select count(*) as row_count from "{table_name}"')
+        counts[table_name] = int(row["row_count"] or 0) if row else 0
+    return counts
 
 
 async def _missing_required_spatial_tables() -> list[dict]:
