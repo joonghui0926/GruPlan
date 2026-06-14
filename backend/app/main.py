@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import math
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
@@ -120,6 +123,8 @@ SLOPE_KEYS = [
     "slope_deg",
     "slant",
     "slant_cd",
+    "slant_typ",
+    "slant_type",
     "경사",
     "경사도",
     "평균경사",
@@ -128,7 +133,20 @@ SLOPE_KEYS = [
     "SLOPE_DEG",
     "SLANT",
     "SLANT_CD",
+    "SLANT_TYP",
+    "SLANT_TYPE",
 ]
+
+FGIS_ENDPOINT = "https://map.forest.go.kr/gis1/iserver/services/data-fdms/rest/data/featureResults.json?returnContent=true"
+FGIS_LAYER_CONFIG = {
+    "stand": ("TB_FGDI_IM5000", "forest_stands"),
+    "planting5000": ("TB_FGDI_FS_JJ5000", "planting_zones"),
+    "planting25000": ("TB_FGDI_FS_JJ101", "planting_zones"),
+    "soilFgis": ("TB_FGDI_FS_IJ100", "forest_soils"),
+    "landslideVector": ("TB_FGIS_FS_FD100", None),
+    "economicNational": ("TB_FGDI_C_FS_EN100", "economic_forest_zones"),
+    "economicPrivate": ("TB_FGDI_C_FS_EN200", "economic_forest_zones"),
+}
 
 
 def _public_error(exc: PublicDataError) -> dict:
@@ -255,11 +273,22 @@ async def analyze_parcel(payload: AnalysisRequest):
     if client_features:
         await _cache_client_features(client_features)
         raw_features = _merge_client_features(raw_features, client_features)
+    fgis_features = {}
+    if payload.include_live:
+        fgis_features = await _live_fgis_features(row["center_lon"], row["center_lat"])
+        if fgis_features:
+            await _cache_fgis_features(fgis_features)
+            raw_features = _merge_fgis_features(raw_features, fgis_features)
     stand_properties = _feature_properties(raw_features, "stand")
     soil_properties = _feature_properties(raw_features, "soil")
     stand_age_class = _extract_int_property(stand_properties, STAND_AGE_KEYS, row["stand_age_class"])
     stand_species = _extract_text_property(stand_properties, STAND_SPECIES_KEYS)
     slope_degree = _extract_slope_degree(soil_properties, row["slope_degree"])
+    planting_fit_count = max(int(row["planting_fit_count"] or 0), _fgis_planting_count(fgis_features))
+    economic_forest = bool(row["economic_forest"]) or _fgis_economic_forest(fgis_features)
+    avg_landslide_grade = _number_or_none(row["avg_landslide_grade"])
+    if avg_landslide_grade is None:
+        avg_landslide_grade = _fgis_landslide_grade(fgis_features)
     fire_risk_index = None
     if payload.include_live and row["pnu"]:
         live_fire_risk = await _live_fire_risk_for_pnu(row["pnu"])
@@ -273,22 +302,22 @@ async def analyze_parcel(payload: AnalysisRequest):
         "standSpecies": stand_species,
         "slopeDegree": slope_degree,
         "fireRiskIndex": fire_risk_index,
-        "plantingFitCount": int(row["planting_fit_count"] or 0),
-        "economicForest": bool(row["economic_forest"]),
+        "plantingFitCount": planting_fit_count,
+        "economicForest": economic_forest,
         "roadDistanceM": _number_or_none(row["road_distance_m"]),
         "roadDensityMPerHa": _number_or_none(row["road_density_m_per_ha"]),
-        "avgLandslideGrade": _number_or_none(row["avg_landslide_grade"]),
+        "avgLandslideGrade": avg_landslide_grade,
     }
     features = FeatureSet(
         area_ha=float(row["area_ha"]) if row["area_ha"] is not None else None,
         road_distance_m=float(row["road_distance_m"]) if row["road_distance_m"] is not None else None,
         road_density_m_per_ha=float(row["road_density_m_per_ha"]) if row["road_density_m_per_ha"] is not None else None,
         slope_degree=slope_degree,
-        avg_landslide_grade=_number_or_none(row["avg_landslide_grade"]),
+        avg_landslide_grade=avg_landslide_grade,
         high_landslide_ratio=_number_or_none(row["high_landslide_ratio"]),
         fire_risk_index=fire_risk_index,
-        economic_forest=bool(row["economic_forest"]),
-        planting_fit_count=int(row["planting_fit_count"] or 0),
+        economic_forest=economic_forest,
+        planting_fit_count=planting_fit_count,
         stand_age_class=stand_age_class,
         stand_species=stand_species,
     )
@@ -537,6 +566,8 @@ async def _query_spatial_features(payload: AnalysisRequest):
       a.address,
       a.admin_name,
       a.area_ha,
+      ST_X(ST_PointOnSurface(a.geom)) as center_lon,
+      ST_Y(ST_PointOnSurface(a.geom)) as center_lat,
       nr.road_distance_m,
       rd.road_density_m_per_ha,
       (soil.properties->>'slope_degree') as slope_degree,
@@ -628,6 +659,206 @@ def _client_feature_properties(feature) -> dict:
     return feature if any(key not in {"type", "geometry", "id"} for key in feature.keys()) else {}
 
 
+async def _live_fgis_features(lon, lat) -> dict:
+    if lon is None or lat is None:
+        return {}
+    try:
+        x, y = _lonlat_to_epsg5179(float(lon), float(lat))
+    except (TypeError, ValueError):
+        return {}
+    async with httpx.AsyncClient(verify=False, timeout=12.0) as client:
+        tasks = [
+            _fetch_fgis_feature(client, key, dataset, x, y)
+            for key, (dataset, _) in FGIS_LAYER_CONFIG.items()
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    features = {}
+    for result in results:
+        if isinstance(result, Exception) or not result:
+            continue
+        key, feature = result
+        if feature:
+            features[key] = feature
+    return features
+
+
+async def _fetch_fgis_feature(client: httpx.AsyncClient, key: str, dataset: str, x: float, y: float):
+    body = {
+        "getFeatureMode": "SPATIAL",
+        "datasetNames": [f"FDMS_BASE:{dataset}"],
+        "spatialQueryMode": "INTERSECT",
+        "geometry": {"type": "POINT", "points": [{"x": x, "y": y}], "parts": [1]},
+        "fromIndex": 0,
+        "toIndex": 0,
+        "returnContent": True,
+    }
+    response = await client.post(
+        FGIS_ENDPOINT,
+        json=body,
+        headers={"Referer": "https://map.forest.go.kr/forest", "User-Agent": "Mozilla/5.0"},
+    )
+    response.raise_for_status()
+    data = response.json()
+    feature = _first_supermap_feature(data, dataset)
+    return key, feature
+
+
+def _first_supermap_feature(data: dict, dataset: str) -> dict | None:
+    features = data.get("features") if isinstance(data, dict) else None
+    if not isinstance(features, list) or not features:
+        return None
+    feature = features[0]
+    properties = dict(zip(feature.get("fieldNames") or [], feature.get("fieldValues") or []))
+    if not properties:
+        return None
+    feature_id = str(feature.get("ID") or properties.get("SMID") or "").strip()
+    properties["_sourceDataset"] = dataset
+    properties["_sourceName"] = "산림공간정보서비스"
+    properties["_sourceFeatureId"] = feature_id
+    geometry = _supermap_geometry_to_geojson(feature.get("geometry"))
+    result = {"type": "Feature", "id": f"fgis:{dataset}:{feature_id}", "properties": properties}
+    if geometry:
+        result["geometry"] = geometry
+        result["geometryCrs"] = "EPSG:5179"
+    return result
+
+
+def _supermap_geometry_to_geojson(geometry: dict | None) -> dict | None:
+    if not isinstance(geometry, dict):
+        return None
+    geom_type = str(geometry.get("type") or "").upper()
+    points = geometry.get("points")
+    parts = geometry.get("parts") or [len(points or [])]
+    if not isinstance(points, list) or not points:
+        return None
+
+    def coords_for(part_points):
+        coords = []
+        for point in part_points:
+            if not isinstance(point, dict):
+                continue
+            x = _number_or_none(point.get("x"))
+            y = _number_or_none(point.get("y"))
+            if x is not None and y is not None:
+                coords.append([x, y])
+        return coords
+
+    offset = 0
+    if geom_type in {"REGION", "POLYGON"}:
+        polygons = []
+        for part in parts:
+            count = int(_number_or_none(part) or 0)
+            ring = coords_for(points[offset : offset + count])
+            offset += count
+            if len(ring) < 3:
+                continue
+            if ring[0] != ring[-1]:
+                ring.append(ring[0])
+            polygons.append([ring])
+        if not polygons:
+            return None
+        return {"type": "Polygon", "coordinates": polygons[0]} if len(polygons) == 1 else {"type": "MultiPolygon", "coordinates": polygons}
+    if geom_type in {"LINE", "LINESTRING"}:
+        lines = []
+        for part in parts:
+            count = int(_number_or_none(part) or 0)
+            line = coords_for(points[offset : offset + count])
+            offset += count
+            if len(line) >= 2:
+                lines.append(line)
+        if not lines:
+            return None
+        return {"type": "LineString", "coordinates": lines[0]} if len(lines) == 1 else {"type": "MultiLineString", "coordinates": lines}
+    if geom_type == "POINT":
+        coords = coords_for(points[:1])
+        return {"type": "Point", "coordinates": coords[0]} if coords else None
+    return None
+
+
+def _lonlat_to_epsg5179(lon: float, lat: float) -> tuple[float, float]:
+    semi_major = 6378137.0
+    flattening = 1 / 298.257222101
+    eccentricity_sq = 2 * flattening - flattening * flattening
+    second_eccentricity_sq = eccentricity_sq / (1 - eccentricity_sq)
+    phi = math.radians(lat)
+    lam = math.radians(lon)
+    phi0 = math.radians(38.0)
+    lam0 = math.radians(127.5)
+    scale = 0.9996
+    false_easting = 1_000_000.0
+    false_northing = 2_000_000.0
+
+    def meridian_arc(value: float) -> float:
+        e2 = eccentricity_sq
+        return semi_major * (
+            (1 - e2 / 4 - 3 * e2**2 / 64 - 5 * e2**3 / 256) * value
+            - (3 * e2 / 8 + 3 * e2**2 / 32 + 45 * e2**3 / 1024) * math.sin(2 * value)
+            + (15 * e2**2 / 256 + 45 * e2**3 / 1024) * math.sin(4 * value)
+            - (35 * e2**3 / 3072) * math.sin(6 * value)
+        )
+
+    radius = semi_major / math.sqrt(1 - eccentricity_sq * math.sin(phi) ** 2)
+    tangent_sq = math.tan(phi) ** 2
+    eta_sq = second_eccentricity_sq * math.cos(phi) ** 2
+    a_value = math.cos(phi) * (lam - lam0)
+    x = false_easting + scale * radius * (
+        a_value
+        + (1 - tangent_sq + eta_sq) * a_value**3 / 6
+        + (5 - 18 * tangent_sq + tangent_sq**2 + 72 * eta_sq - 58 * second_eccentricity_sq) * a_value**5 / 120
+    )
+    y = false_northing + scale * (
+        meridian_arc(phi)
+        - meridian_arc(phi0)
+        + radius
+        * math.tan(phi)
+        * (
+            a_value**2 / 2
+            + (5 - tangent_sq + 9 * eta_sq + 4 * eta_sq**2) * a_value**4 / 24
+            + (61 - 58 * tangent_sq + tangent_sq**2 + 600 * eta_sq - 330 * second_eccentricity_sq)
+            * a_value**6
+            / 720
+        )
+    )
+    return x, y
+
+
+def _fgis_feature_properties(feature) -> dict:
+    if not isinstance(feature, dict):
+        return {}
+    return feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+
+
+def _merge_fgis_features(raw_features: dict, fgis_features: dict) -> dict:
+    merged = dict(raw_features or {})
+    stand = _fgis_feature_properties(fgis_features.get("stand"))
+    if stand:
+        merged["stand"] = {**_feature_properties(merged, "stand"), **stand}
+        merged["standMatch"] = {"matchType": "산림공간정보서비스 교차", "distanceM": 0, "overlapAreaM2": None}
+    soil = _fgis_feature_properties(fgis_features.get("soilFgis"))
+    if soil:
+        merged["soil"] = {**_feature_properties(merged, "soil"), **soil}
+        merged["soilFgis"] = soil
+        merged["soilMatch"] = {"matchType": "산림공간정보서비스 교차", "distanceM": 0, "overlapAreaM2": None}
+    for key in ("planting5000", "planting25000", "landslideVector", "economicNational", "economicPrivate"):
+        properties = _fgis_feature_properties(fgis_features.get(key))
+        if properties:
+            merged[key] = properties
+    return merged
+
+
+def _fgis_planting_count(fgis_features: dict) -> int:
+    return sum(1 for key in ("planting5000", "planting25000") if _fgis_feature_properties(fgis_features.get(key)))
+
+
+def _fgis_economic_forest(fgis_features: dict) -> bool:
+    return any(_fgis_feature_properties(fgis_features.get(key)) for key in ("economicNational", "economicPrivate"))
+
+
+def _fgis_landslide_grade(fgis_features: dict) -> float | None:
+    properties = _fgis_feature_properties(fgis_features.get("landslideVector"))
+    return _number_or_none(properties.get("GRIDCODE")) if properties else None
+
+
 async def _cache_client_features(client_features: dict) -> None:
     if not db.pool:
         return
@@ -637,6 +868,17 @@ async def _cache_client_features(client_features: dict) -> None:
         await _cache_cadastral_feature(cadastral)
     if isinstance(soil, dict):
         await _cache_vector_feature("forest_soils", soil)
+
+
+async def _cache_fgis_features(fgis_features: dict) -> None:
+    if not db.pool or not isinstance(fgis_features, dict):
+        return
+    for key, (_, table_name) in FGIS_LAYER_CONFIG.items():
+        if not table_name:
+            continue
+        feature = fgis_features.get(key)
+        if isinstance(feature, dict):
+            await _cache_fgis_vector_feature(table_name, feature)
 
 
 async def _cache_cadastral_feature(feature: dict) -> None:
@@ -682,6 +924,31 @@ async def _cache_vector_feature(table_name: str, feature: dict) -> None:
           $1,
           $2::jsonb,
           ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($3), 4326))
+        where not exists (
+          select 1 from {table_name} where source_feature_id = $1
+        )
+        """,
+        source_feature_id,
+        json.dumps(properties, ensure_ascii=False),
+        json.dumps(geometry),
+    )
+
+
+async def _cache_fgis_vector_feature(table_name: str, feature: dict) -> None:
+    if table_name not in {"forest_stands", "forest_soils", "planting_zones", "economic_forest_zones"}:
+        return
+    properties = _fgis_feature_properties(feature)
+    geometry = feature.get("geometry")
+    source_feature_id = str(feature.get("id") or properties.get("_sourceFeatureId") or "").strip()
+    if not source_feature_id or not isinstance(geometry, dict):
+        return
+    await db.execute(
+        f"""
+        insert into {table_name} (source_feature_id, properties, geom)
+        select
+          $1,
+          $2::jsonb,
+          ST_Multi(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON($3), 5179), 4326))
         where not exists (
           select 1 from {table_name} where source_feature_id = $1
         )
@@ -748,7 +1015,7 @@ def _extract_slope_degree(properties: dict, fallback=None) -> float | None:
     if number is None:
         return None
     normalized_key = _normalize_property_key(key or "")
-    if number <= 6 and any(token in normalized_key for token in ["cd", "code", "등급", "급"]):
+    if number <= 6 and any(token in normalized_key for token in ["cd", "code", "typ", "type", "등급", "급"]):
         return {1: 3, 2: 10, 3: 17.5, 4: 22.5, 5: 27.5, 6: 35}.get(int(number), number)
     return number
 
