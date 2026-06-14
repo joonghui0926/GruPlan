@@ -118,6 +118,9 @@ class PublicApiClient:
             "Referer": referer,
         }
 
+    def vworld_domain(self) -> str:
+        return self.settings.vworld_referer.rstrip("/")
+
     def require_data_key(self, source_id: str) -> str:
         if not self.settings.data_go_kr_service_key:
             raise PublicDataError("DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.", 503, source_id)
@@ -140,6 +143,8 @@ class PublicApiClient:
             "type": "address",
             "category": "parcel",
             "format": "json",
+            "errorFormat": "json",
+            "domain": self.vworld_domain(),
             "query": query,
             "key": key,
         }
@@ -154,6 +159,10 @@ class PublicApiClient:
             "geomFilter": f"POINT({lon} {lat})",
             "crs": "EPSG:4326",
             "format": "json",
+            "errorFormat": "json",
+            "geometry": "true",
+            "attribute": "true",
+            "domain": self.vworld_domain(),
             "size": 10,
             "key": key,
         }
