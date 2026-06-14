@@ -36,7 +36,7 @@ def fallback_plan_narrative(analysis: dict[str, Any]) -> str:
             f"{address}는 {area_text} 기준으로 산림 상태와 입지 조건을 함께 본 필지입니다.",
             f"현재 점수에서는 {scenario} 방향이 가장 높으며, 접근성 {access}점과 재난위험 {disaster}점을 함께 검토해야 합니다.",
             f"올해 먼저 확인할 작업은 {task_titles}입니다.",
-            f"근거 데이터는 {source_names}를 사용했습니다. 현장 조사와 담당 기관 상담을 거쳐 최종 계획을 확정합니다.",
+            f"분석 출처는 {source_names}입니다. 현장 조사와 담당 기관 상담을 거쳐 최종 계획을 확정합니다.",
         ]
     )
 

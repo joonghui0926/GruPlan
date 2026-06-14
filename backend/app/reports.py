@@ -76,7 +76,7 @@ def build_plan_pdf(analysis: dict) -> bytes:
         Paragraph("공공데이터 기반 참고 문서입니다. 행정 제출 전 산림기술자 또는 담당 기관 검토가 필요합니다.", styles["CoverBody"]),
         PageBreak(),
         Paragraph("산림경영계획서 초안", styles["KoTitle"]),
-        Paragraph("필지 경계, 공간 데이터, 시나리오 점수, XAI 근거 체인을 정리한 참고 문서입니다.", styles["KoBody"]),
+        Paragraph("필지 경계, 공간 데이터, 종합 지표, XAI 근거 체인을 정리한 참고 문서입니다.", styles["KoBody"]),
         Spacer(1, 10),
     ]
 
@@ -97,7 +97,7 @@ def build_plan_pdf(analysis: dict) -> bytes:
         story.append(Paragraph("추천 시나리오 설계", styles["KoHeading"]))
         story.append(_para(scenario_plan.get("thesis", ""), styles))
         plan_rows = [["구분", "내용"]]
-        plan_rows.append(["작용 근거", _para(_list_text(scenario_plan.get("context") or []), styles)])
+        plan_rows.append(["주요 판단 변수", _para(_list_text(scenario_plan.get("context") or []), styles)])
         plan_rows.append(["운영 아이디어", _para(_list_text(scenario_plan.get("ideas") or []), styles)])
         phase_text = []
         for phase in scenario_plan.get("phases") or []:
@@ -119,7 +119,7 @@ def build_plan_pdf(analysis: dict) -> bytes:
             ])
         story.append(Table(rows, colWidths=[18 * mm, 15 * mm, 58 * mm, 32 * mm, 35 * mm], style=_table_style(font_name, font_size=7, leading=10)))
 
-    story.append(Paragraph("시나리오 점수", styles["KoHeading"]))
+    story.append(Paragraph("종합 지표", styles["KoHeading"]))
     score_rows = [["지표", "점수"]]
     for key, label in [
         ("accessibility", "접근성"),
@@ -177,7 +177,7 @@ def build_plan_pdf(analysis: dict) -> bytes:
         rows = [["작업", "근거", "시기"], ["공간분석 완료 후 생성", "원천 데이터 적재 필요", "확인 필요"]]
     story.append(Table(rows, colWidths=[45 * mm, 78 * mm, 35 * mm], style=_table_style(font_name)))
 
-    story.append(Paragraph("근거 데이터", styles["KoHeading"]))
+    story.append(Paragraph("분석 출처", styles["KoHeading"]))
     source_rows = [["ID", "데이터", "상태"]]
     for source in sources:
         source_rows.append([source.get("id", ""), source.get("name", ""), source.get("status", "")])
@@ -200,7 +200,7 @@ def _feature_rows(features: dict) -> list[tuple[str, str, str]]:
         for key, value in list(values.items())[:8]:
             if value in (None, "") or "geom" in str(key).lower():
                 continue
-            rows.append((group, str(key), _format_feature_value(value)))
+            rows.append((group, _feature_key_label(str(key)), _format_feature_value(value)))
     return rows
 
 
@@ -211,6 +211,21 @@ def _input_summary(inputs: dict) -> str:
             continue
         rows.append(f"{key}: {_format_feature_value(value)}")
     return "<br/>".join(rows) if rows else "원천값 확인"
+
+
+def _feature_key_label(key: str) -> str:
+    labels = {
+        "standAgeClass": "영급",
+        "standSpecies": "임상/수종 구성",
+        "plantingFitCount": "조림 후보",
+        "economicForest": "경제림 구역",
+        "slopeDegree": "경사",
+        "roadDistanceM": "가까운 임도",
+        "roadDensityMPerHa": "임도 밀도",
+        "avgLandslideGrade": "산사태 평균등급",
+        "fireRiskIndex": "산불위험지수",
+    }
+    return labels.get(key, key)
 
 
 def _list_text(items: list) -> str:

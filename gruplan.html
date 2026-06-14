@@ -1024,6 +1024,28 @@
     .reportTable td strong {
       color: var(--ink);
     }
+    .compactDriverTable {
+      width: 100%;
+      border-collapse: collapse;
+      border-top: 2px solid var(--forest);
+      font-size: 13px;
+    }
+    .compactDriverTable th,
+    .compactDriverTable td {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    .compactDriverTable th {
+      width: 36%;
+      color: var(--forest);
+      font-weight: 900;
+    }
+    .compactDriverTable td {
+      color: var(--muted);
+      font-weight: 800;
+    }
     .sourceMiniLine {
       display: block;
       color: var(--muted);
@@ -1439,7 +1461,7 @@
       <div class="analysisSteps" id="analysisSteps">
         <div class="analysisStep" data-step="0"><strong><i data-lucide="land-plot" class="icon"></i>필지 확정</strong><span>경계와 PNU 확인</span></div>
         <div class="analysisStep" data-step="1"><strong><i data-lucide="layers-3" class="icon"></i>공간 교차</strong><span>산림공간정보 결합</span></div>
-        <div class="analysisStep" data-step="2"><strong><i data-lucide="brain-circuit" class="icon"></i>방향 판단</strong><span>시나리오 점수화</span></div>
+        <div class="analysisStep" data-step="2"><strong><i data-lucide="brain-circuit" class="icon"></i>방향 판단</strong><span>종합 지표 계산</span></div>
         <div class="analysisStep" data-step="3"><strong><i data-lucide="list-checks" class="icon"></i>실행 정리</strong><span>작업과 근거 구성</span></div>
       </div>
       <div id="analysisModalBody" class="analysisBody"></div>
@@ -2000,7 +2022,7 @@
         </div>
         <div class="kpiGrid">
           <div class="kpiCell"><small>필지 면적</small><strong>${formatArea(parcel.areaHa)}</strong></div>
-          <div class="kpiCell"><small>근거 데이터</small><strong>${sources.length || state.sources.length}개</strong></div>
+          <div class="kpiCell"><small>분석 출처</small><strong>${sources.length || state.sources.length}개</strong></div>
           <div class="kpiCell"><small>우선 작업</small><strong>${tasks.length}건</strong></div>
           <div class="kpiCell"><small>위험 점수</small><strong>${Math.round(scores.disasterRisk ?? 0)}</strong></div>
         </div>
@@ -2030,16 +2052,6 @@
       const sources = payload.sources || [];
       const profile = scenarioProfile(scores.recommendedScenario);
       openAnalysisModal("산림자산 분석 리포트", `${parcel.address || parcel.pnu || "선택한 필지"}의 경영 방향을 정리했습니다.`);
-      const scoreRows = scoreLabels().map(([key, label, color]) => {
-        const value = Math.round(scores[key] ?? 0);
-        return `
-          <div class="modalScoreRow">
-            <span>${label}</span>
-            <span class="modalScoreTrack"><span class="modalScoreFill" style="width:${value}%;background:${color}"></span></span>
-            <strong>${value}</strong>
-          </div>
-        `;
-      }).join("");
       const radar = renderRadarChart(scores);
       const insightRows = buildInsights(payload).map((item) => `
         <div class="insightItem">
@@ -2061,6 +2073,7 @@
       const featureTable = renderFeatureTable(payload.features);
       const radarLegend = renderRadarLegend(scores);
       const scenarioPlan = renderScenarioPlan(payload);
+      const keyDriverTable = renderKeyDriverTable(payload);
 
       document.getElementById("analysisModalBody").innerHTML = `
         <div class="decisionBlock" style="border-left-color:${profile.color};background:${profile.background}">
@@ -2070,7 +2083,7 @@
         </div>
         <div class="impactGrid">
           <div class="impactCell"><small>필지 면적</small><strong>${formatArea(parcel.areaHa)}</strong></div>
-          <div class="impactCell"><small>근거 데이터</small><strong>${sources.length || state.sources.length}개</strong></div>
+          <div class="impactCell"><small>분석 출처</small><strong>${sources.length || state.sources.length}개</strong></div>
           <div class="impactCell"><small>우선 작업</small><strong>${tasks.length}건</strong></div>
           <div class="impactCell"><small>위험 점수</small><strong>${Math.round(scores.disasterRisk ?? 0)}</strong></div>
         </div>
@@ -2079,14 +2092,14 @@
           <div>
             <div class="modalSectionTitle">${icon("sparkles")}판단 요약</div>
             <div class="insightList">${insightRows}</div>
-            <div class="modalSectionTitle">${icon("list-checks")}다음 행동</div>
+            <div class="modalSectionTitle">${icon("list-checks")}상담 전 체크</div>
             <div class="actionTimeline">${actionRows}</div>
           </div>
           <div>
             <div class="modalSectionTitle">${icon("radar")}종합 지표</div>
             <div class="radarPanel">${radar}<div class="radarLegend">${radarLegend}</div></div>
-            <div class="modalSectionTitle">${icon("gauge")}시나리오 점수</div>
-            <div class="scorePanel">${scoreRows}</div>
+            <div class="modalSectionTitle">${icon("sliders-horizontal")}핵심 변수</div>
+            ${keyDriverTable}
           </div>
         </div>
         <div class="wideReport">
@@ -2185,6 +2198,29 @@
       }).join("");
     }
 
+    function renderKeyDriverTable(payload) {
+      const features = payload.features || {};
+      const derived = features.derived || {};
+      const rows = [
+        ["면적", formatArea(payload.parcel?.areaHa)],
+        ["영급", formatDerivedValue("standAgeClass", derived.standAgeClass, features)],
+        ["임상/수종 구성", formatDerivedValue("standSpecies", derived.standSpecies, features)],
+        ["조림 후보", formatDerivedValue("plantingFitCount", derived.plantingFitCount, features)],
+        ["경제림 구역", formatDerivedValue("economicForest", derived.economicForest, features)],
+        ["경사", formatDerivedValue("slopeDegree", derived.slopeDegree, features)],
+        ["가까운 임도", formatDerivedValue("roadDistanceM", derived.roadDistanceM, features)],
+        ["산사태 평균등급", formatDerivedValue("avgLandslideGrade", derived.avgLandslideGrade, features)],
+        ["산불위험지수", formatDerivedValue("fireRiskIndex", derived.fireRiskIndex, features)]
+      ].filter(([, value]) => value && value !== "원천값 없음");
+      return `
+        <table class="compactDriverTable">
+          <tbody>
+            ${rows.map(([label, value]) => `<tr><th>${label}</th><td>${value}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
     function renderScenarioPlan(payload) {
       const plan = payload.scenarioPlan;
       if (!plan) return "";
@@ -2238,10 +2274,23 @@
       return sources.map((source) => `
         <button type="button" class="evidenceItem" data-source-id="${escapeHtml(source.id || "")}" aria-label="${escapeHtml(source.name || "데이터 근거")} 자세히 보기">
           <code>${escapeHtml(source.id || "")}</code>
-          <span><strong>${escapeHtml(source.name || "데이터 출처")}</strong><span>이 필지에서 작용한 근거 보기</span></span>
+          <span><strong>${escapeHtml(source.name || "데이터 출처")}</strong><span>${escapeHtml(sourceEvidenceCaption(source))}</span></span>
           <span class="evidenceArrow">${icon("chevron-right")}</span>
         </button>
       `).join("");
+    }
+
+    function sourceEvidenceCaption(source = {}) {
+      const captions = {
+        D1: "영급과 임상 구성",
+        D2: "경사와 토양 조건",
+        D3: "조림 후보 교차",
+        D4: "임도 거리와 밀도",
+        D5: "산사태 위험 격자",
+        D8: "경제림 구역 여부",
+        D12: "경계와 PNU 기준"
+      };
+      return captions[source.id] || "필지 판단에 반영된 값";
     }
 
     function bindPanelEvidenceButtons(payload) {
@@ -2454,7 +2503,7 @@
     function featureLabelFor(key) {
       const labels = {
         standAgeClass: "영급",
-        standSpecies: "수종",
+        standSpecies: "임상/수종 구성",
         plantingFitCount: "조림 후보",
         economicForest: "경제림 구역",
         slopeDegree: "경사",
@@ -2481,7 +2530,7 @@
         }
         const fallback = {
           standAgeClass: "임상도 영급 속성 없음",
-          standSpecies: "임상도 수종 속성 없음",
+          standSpecies: "임상도 임상/수종 구성 속성 없음",
           slopeDegree: "입지토양도 경사 속성 없음",
           roadDistanceM: "임도 거리 산정값 없음",
           avgLandslideGrade: "산사태 격자값 없음",
@@ -2562,7 +2611,7 @@
         {
           icon: "badge-check",
           title: `${scenario} 우선`,
-          detail: `경영 시나리오 중 가장 높은 점수는 ${Math.round(topScore)}점입니다.`
+          detail: `가장 높은 점수는 ${Math.round(topScore)}점이며 비교표에서 점수 차이를 확인합니다.`
         },
         {
           icon: "land-plot",
@@ -2571,7 +2620,7 @@
         },
         {
           icon: scores.disasterRisk > 55 ? "triangle-alert" : "shield-check",
-          title: scores.disasterRisk > 55 ? "위험 관리 우선" : "위험 점수 안정권",
+          title: scores.disasterRisk > 55 ? "위험 관리 우선" : "재난위험 관리 가능",
           detail: `재난위험 점수는 ${Math.round(scores.disasterRisk ?? 0)}점입니다.`
         },
         {
