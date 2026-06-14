@@ -69,12 +69,21 @@ async def fetch_xml(url: str, params: dict, source_id: str, headers: dict[str, s
     try:
         response = await _get(url, params, headers)
         response.raise_for_status()
-        if response.text.lstrip().startswith(("<html", "<!DOCTYPE html", "{")):
+        body = response.text.lstrip()
+        if body.startswith("{"):
+            data = response.json()
+            message = _provider_error_message(data)
+            if message:
+                raise PublicDataError(message, 502, source_id)
+            return data
+        if body.startswith(("<html", "<!DOCTYPE html")):
             raise PublicDataError(_friendly_upstream_message(source_id, response), 502, source_id)
-        root = ET.fromstring(response.text)
+        root = ET.fromstring(body)
         return {root.tag: _compact_xml(root)}
     except httpx.HTTPStatusError as exc:
         raise PublicDataError(_friendly_upstream_message(source_id, exc.response), 502, source_id) from exc
+    except JSONDecodeError as exc:
+        raise PublicDataError("제공기관 JSON 응답을 정리하지 못했습니다.", 502, source_id) from exc
     except ET.ParseError as exc:
         raise PublicDataError("제공기관 응답 형식이 달라 항목을 표시하지 못했습니다.", 502, source_id) from exc
     except httpx.HTTPError as exc:
