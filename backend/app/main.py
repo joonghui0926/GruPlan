@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from pydantic import BaseModel, Field
 from .data_catalog import PUBLIC_DATA_SOURCES, SOURCE_BY_ID
 from .db import Database
 from .llm import generate_plan_narrative
-from .public_clients import PublicApiClient, PublicDataError
+from .public_clients import PublicApiClient, PublicDataError, _current_admin_code
 from .reports import build_plan_pdf
 from .scoring import FeatureSet, distance_score, score_features, slope_penalty
 from .settings import get_settings
@@ -53,6 +54,52 @@ class AnalysisRequest(BaseModel):
 
 class ReportRequest(BaseModel):
     analysis: dict
+
+
+STAND_AGE_KEYS = [
+    "age_class",
+    "agcls_cd",
+    "agcls",
+    "영급",
+    "영급코드",
+    "임령급",
+    "agecls",
+    "AGE_CLASS",
+    "AGCLS_CD",
+]
+STAND_SPECIES_KEYS = [
+    "species",
+    "tree_species",
+    "koftr_group",
+    "koftr_group_cd",
+    "koftr_cd",
+    "frtp_cd",
+    "수종",
+    "대표수종",
+    "주요수종",
+    "수종명",
+    "임상",
+    "임종",
+    "KOFTR_GROUP",
+    "KOFTR_GROUP_CD",
+    "KOFTR_CD",
+    "FRTP_CD",
+]
+SLOPE_KEYS = [
+    "slope_degree",
+    "slope",
+    "slope_deg",
+    "slant",
+    "slant_cd",
+    "경사",
+    "경사도",
+    "평균경사",
+    "경사등급",
+    "SLOPE",
+    "SLOPE_DEG",
+    "SLANT",
+    "SLANT_CD",
+]
 
 
 def _public_error(exc: PublicDataError) -> dict:
@@ -148,17 +195,36 @@ async def analyze_parcel(payload: AnalysisRequest):
     if row is None:
         raise HTTPException(status_code=404, detail="해당 필지를 찾지 못했습니다.")
 
-    raw_features = row["features"] or {}
+    raw_features = dict(row["features"] or {})
+    stand_properties = _feature_properties(raw_features, "stand")
+    soil_properties = _feature_properties(raw_features, "soil")
+    stand_age_class = _extract_int_property(stand_properties, STAND_AGE_KEYS, row["stand_age_class"])
+    stand_species = _extract_text_property(stand_properties, STAND_SPECIES_KEYS)
+    slope_degree = _extract_slope_degree(soil_properties, row["slope_degree"])
+    fire_risk_index = None
+    if payload.include_live and row["pnu"]:
+        live_fire_risk = await _live_fire_risk_for_pnu(row["pnu"])
+        if live_fire_risk:
+            raw_features["fireRisk"] = live_fire_risk
+            fire_risk_index = _extract_fire_risk_index(live_fire_risk)
+    raw_features["derived"] = {
+        "standAgeClass": stand_age_class,
+        "standSpecies": stand_species,
+        "slopeDegree": slope_degree,
+        "fireRiskIndex": fire_risk_index,
+    }
     features = FeatureSet(
         area_ha=float(row["area_ha"]) if row["area_ha"] is not None else None,
         road_distance_m=float(row["road_distance_m"]) if row["road_distance_m"] is not None else None,
         road_density_m_per_ha=float(row["road_density_m_per_ha"]) if row["road_density_m_per_ha"] is not None else None,
-        slope_degree=_number_or_none(row["slope_degree"]),
+        slope_degree=slope_degree,
         avg_landslide_grade=_number_or_none(row["avg_landslide_grade"]),
         high_landslide_ratio=_number_or_none(row["high_landslide_ratio"]),
+        fire_risk_index=fire_risk_index,
         economic_forest=bool(row["economic_forest"]),
         planting_fit_count=int(row["planting_fit_count"] or 0),
-        stand_age_class=int(row["stand_age_class"]) if row["stand_age_class"] is not None else None,
+        stand_age_class=stand_age_class,
+        stand_species=stand_species,
     )
     scores = score_features(features)
     return {
@@ -275,9 +341,14 @@ async def _query_spatial_features(payload: AnalysisRequest):
       from parcel
     ),
     nearest_road as (
-      select min(ST_Distance(a.geom::geography, r.geom::geography)) as road_distance_m
-      from area_calc a, forest_roads r
-      where ST_DWithin(a.geom::geography, r.geom::geography, 5000)
+      select ST_Distance(a.geom::geography, r.geom::geography) as road_distance_m
+      from area_calc a
+      left join lateral (
+        select geom
+        from forest_roads
+        order by geom <-> a.geom
+        limit 1
+      ) r on true
     ),
     road_density as (
       select coalesce(sum(ST_Length(ST_Intersection(a.geom, r.geom)::geography)), 0) / nullif(max(a.area_ha), 0) as road_density_m_per_ha
@@ -378,13 +449,96 @@ async def _query_spatial_features(payload: AnalysisRequest):
     return await db.fetchrow(sql, payload.pnu, geometry)
 
 
+def _feature_properties(features: dict, key: str) -> dict:
+    value = features.get(key) if isinstance(features, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _normalize_property_key(value: str) -> str:
+    return "".join(ch for ch in str(value).lower() if ch.isalnum() or "\uac00" <= ch <= "\ud7a3")
+
+
+def _find_property(properties: dict, keys: list[str]):
+    if not isinstance(properties, dict):
+        return None, None
+    normalized = {_normalize_property_key(key): (key, value) for key, value in properties.items()}
+    for key in keys:
+        found = normalized.get(_normalize_property_key(key))
+        if found and found[1] not in (None, ""):
+            return found
+    wanted = [_normalize_property_key(key) for key in keys]
+    for actual_key, value in properties.items():
+        actual = _normalize_property_key(actual_key)
+        if value in (None, ""):
+            continue
+        if any(token and (token in actual or actual in token) for token in wanted):
+            return actual_key, value
+    return None, None
+
+
+def _extract_int_property(properties: dict, keys: list[str], fallback=None) -> int | None:
+    _, value = _find_property(properties, keys)
+    if value in (None, ""):
+        value = fallback
+    number = _number_or_none(value)
+    if number is None:
+        digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+        number = _number_or_none(digits) if digits else None
+    return int(number) if number is not None else None
+
+
+def _extract_text_property(properties: dict, keys: list[str]) -> str | None:
+    key, value = _find_property(properties, keys)
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if key and _normalize_property_key(key) in {"koftrgroupcd", "frtpcd"}:
+        return {"1": "침엽수림", "2": "활엽수림", "3": "혼효림"}.get(text, f"수종 코드 {text}")
+    return text
+
+
+def _extract_slope_degree(properties: dict, fallback=None) -> float | None:
+    key, value = _find_property(properties, SLOPE_KEYS)
+    if value in (None, ""):
+        value = fallback
+    number = _number_or_none(value)
+    if number is None:
+        return None
+    normalized_key = _normalize_property_key(key or "")
+    if number <= 6 and any(token in normalized_key for token in ["cd", "code", "등급", "급"]):
+        return {1: 3, 2: 10, 3: 17.5, 4: 22.5, 5: 27.5, 6: 35}.get(int(number), number)
+    return number
+
+
+async def _live_fire_risk_for_pnu(pnu: str) -> dict | None:
+    sigungu_code = _current_admin_code(str(pnu)[:5], 5)
+    if not sigungu_code:
+        return None
+    try:
+        return await public_client.fire_risk(sigunguCode=sigungu_code)
+    except PublicDataError:
+        return None
+
+
+def _extract_fire_risk_index(data: dict) -> float | None:
+    item = data.get("response", {}).get("body", {}).get("items", {}).get("item") if isinstance(data, dict) else None
+    if isinstance(item, list) and item:
+        item = item[0]
+    if not isinstance(item, dict):
+        return None
+    return _number_or_none(item.get("meanavg")) or _number_or_none(item.get("maxi"))
+
+
 def _number_or_none(value) -> float | None:
     if value in (None, ""):
         return None
     try:
-        return float(value)
+        return float(str(value).replace(",", "").strip())
     except (TypeError, ValueError):
-        return None
+        match = re.search(r"-?\d+(?:\.\d+)?", str(value))
+        return float(match.group(0)) if match else None
 
 
 def _first_vworld_point(search: dict) -> dict | None:
@@ -444,6 +598,7 @@ def _scenario_reasons(features: FeatureSet, scores: dict) -> list[dict]:
     disaster = scores.get("disasterRisk", 0) or 0
     area = features.area_ha or 0
     age = features.stand_age_class or 0
+    species = features.stand_species or "확인 필요"
     planting = features.planting_fit_count or 0
     economic = "경제림 구역에 포함" if features.economic_forest else "경제림 구역 미포함"
     road = _format_meters(features.road_distance_m)
@@ -459,11 +614,26 @@ def _scenario_reasons(features: FeatureSet, scores: dict) -> list[dict]:
         if access_ready
         else f"수익형은 작업로와 운반 동선이 핵심인데, 이 필지는 {gaps} 확보가 먼저입니다. 현재 {round(scores.get('profit', 0) or 0)}점은 경제림 여부와 조림 후보만 반영한 예비값이며, 임도 거리와 경사가 들어오면 가장 크게 바뀝니다."
     )
-    carbon_judgement = (
-        f"면적 {round(area, 2)}ha와 영급 {age}이 장기 흡수 관리 점수를 만들었습니다. 면적 기여는 {round(min(area * 1.6, 14), 1)}점, 영급 기여는 {round(min(age * 3.5, 22), 1)}점입니다."
-        if stand_ready
-        else f"면적 {round(area, 2)}ha는 확인됐지만 영급과 수종 근거가 아직 비어 있습니다. 탄소형 {round(scores.get('carbon', 0) or 0)}점은 면적만 반영한 출발값이고, 실제 등록성은 영급·수종·제외면적 산정 뒤에 좁혀야 합니다."
-    )
+    if stand_ready and features.stand_species:
+        carbon_judgement = (
+            f"면적 {round(area, 2)}ha, 영급 {age}, 수종 {species}가 탄소형 점수의 핵심 근거입니다. "
+            f"면적 기여는 {round(min(area * 1.6, 14), 1)}점, 영급 기여는 {round(min(age * 3.5, 22), 1)}점입니다."
+        )
+    elif stand_ready:
+        carbon_judgement = (
+            f"면적 {round(area, 2)}ha와 영급 {age}이 장기 흡수 관리 점수를 만들었습니다. "
+            f"수종은 임상도 원천 속성표에서 추가 확인 대상으로 남기고, 영급 기여는 {round(min(age * 3.5, 22), 1)}점입니다."
+        )
+    elif features.stand_species:
+        carbon_judgement = (
+            f"면적 {round(area, 2)}ha와 수종 {species}가 확인됐습니다. "
+            f"영급 값이 들어오면 장기 흡수량과 등록 가능 면적을 더 좁혀 계산합니다."
+        )
+    else:
+        carbon_judgement = (
+            f"면적 {round(area, 2)}ha는 확인됐고, 임상도 속성에서 영급과 수종을 찾는 중입니다. "
+            f"탄소형 {round(scores.get('carbon', 0) or 0)}점은 현재 확보된 면적과 재난·접근 조건을 반영한 값입니다."
+        )
     conservation_judgement = (
         f"산사태 평균등급은 {landslide}, 경사는 {slope}입니다. 이 조합이 보전형 {round(scores.get('conservation', 0) or 0)}점을 만들었고, 급경사나 위험 격자가 겹치는 구역은 별도 관리 대상으로 봅니다."
         if disaster_ready and features.slope_degree is not None
@@ -495,6 +665,7 @@ def _scenario_reasons(features: FeatureSet, scores: dict) -> list[dict]:
             "drivers": [
                 f"면적: {round(area, 2)}ha",
                 f"영급: {age if age else '확인 필요'}",
+                f"수종: {species}",
                 "제외면적: 현장 산정 필요",
             ],
             "nextCheck": "수종, 영급, 제외 면적을 보정한 뒤 산림탄소상쇄 등록 사례와 유사 면적을 비교합니다.",
@@ -690,9 +861,9 @@ def _source_parcel_evidence(source_id: str, features: FeatureSet, scores: dict) 
     density = _format_density(features.road_density_m_per_ha)
     data = {
         "D1": [
-            f"영급은 {age if age is not None else '현장 확인 대상'}입니다. 영급이 확인되면 탄소형과 수익형 판단이 가장 크게 보정됩니다.",
+            f"영급은 {age if age is not None else '원천 속성 확인 중'}, 수종은 {features.stand_species or '원천 속성 확인 중'}입니다.",
             f"현재 탄소형 {round(scores.get('carbon', 0) or 0)}점은 면적 {round(area, 2)}ha와 확인된 임상 속성만 반영한 값입니다.",
-            "수종과 수관밀도 원천 속성이 적재되면 장기 관리와 벌채 가능성 문장을 더 좁힐 수 있습니다.",
+            "수관밀도와 경급까지 함께 잡히면 장기 관리, 보식, 부분 갱신 여부를 더 좁힐 수 있습니다.",
         ],
         "D2": [
             f"경사는 {slope}입니다. 값이 확인되면 접근성, 보전형, 재난저감형 판단이 함께 보정됩니다.",
@@ -914,11 +1085,26 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
         if features.avg_landslide_grade is not None or features.fire_risk_index is not None
         else "산사태와 산불위험 값이 아직 비어 있습니다. 이 상태는 안전 판정이 아니며, 계곡부·사면 하단·임도 절개지를 먼저 확인해야 합니다."
     )
-    carbon_interpretation = (
-        f"면적 {round(features.area_ha or 0, 2)}ha가 {area_bonus}점, 영급 {features.stand_age_class}이 {carbon_age_bonus}점 기여했습니다. 접근성과 재난위험이 좋지 않으면 장기 관리 비용을 반영해 감점됩니다."
-        if features.stand_age_class is not None
-        else f"면적 {round(features.area_ha or 0, 2)}ha는 반영됐지만 영급과 수종이 아직 비어 있습니다. 탄소형 {round(scores.get('carbon', 0) or 0)}점은 등록 가능성 확정이 아니라 기준선 산정 전 후보값입니다."
-    )
+    if features.stand_age_class is not None and features.stand_species:
+        carbon_interpretation = (
+            f"면적 {round(features.area_ha or 0, 2)}ha가 {area_bonus}점, 영급 {features.stand_age_class}이 {carbon_age_bonus}점 기여했습니다. "
+            f"수종 {features.stand_species}은 장기 관리 방식과 갱신 전략을 정하는 근거로 연결됩니다."
+        )
+    elif features.stand_age_class is not None:
+        carbon_interpretation = (
+            f"면적 {round(features.area_ha or 0, 2)}ha가 {area_bonus}점, 영급 {features.stand_age_class}이 {carbon_age_bonus}점 기여했습니다. "
+            "수종명은 임상도 속성표의 보조 항목으로 분리해 현장 수종과 대조합니다."
+        )
+    elif features.stand_species:
+        carbon_interpretation = (
+            f"면적 {round(features.area_ha or 0, 2)}ha와 수종 {features.stand_species}가 반영됐습니다. "
+            "영급 값이 연결되면 장기 흡수량과 탄소형 점수가 더 정밀해집니다."
+        )
+    else:
+        carbon_interpretation = (
+            f"면적 {round(features.area_ha or 0, 2)}ha는 반영됐고 임상도 속성에서 영급과 수종을 찾는 중입니다. "
+            f"탄소형 {round(scores.get('carbon', 0) or 0)}점은 현재 확보된 면적과 재난·접근 조건을 반영한 값입니다."
+        )
     return {
         "method": "공공데이터 검색 체인과 가중치 기반 설명",
         "retrievalChain": [
@@ -972,6 +1158,7 @@ def _build_xai(features: FeatureSet, scores: dict) -> dict:
                 "inputs": {
                     "areaHa": features.area_ha,
                     "standAgeClass": features.stand_age_class,
+                    "standSpecies": features.stand_species,
                     "carbonCaseSimilarity": features.carbon_case_similarity,
                 },
                 "interpretation": carbon_interpretation,

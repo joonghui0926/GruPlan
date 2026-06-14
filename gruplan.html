@@ -395,6 +395,34 @@
       font-size: 13px;
     }
     .notice strong { color: var(--ink); }
+    .progressNotice {
+      display: grid;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .progressHead {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-weight: 800;
+    }
+    .progressTrack {
+      width: 100%;
+      height: 9px;
+      border-radius: 999px;
+      background: #dfe8da;
+      overflow: hidden;
+    }
+    .progressFill {
+      display: block;
+      width: var(--progress);
+      height: 100%;
+      border-radius: inherit;
+      background: var(--pine);
+      transition: width .32s ease;
+    }
     .scoreRows {
       display: grid;
       gap: 13px;
@@ -2499,7 +2527,21 @@
         return;
       }
       scrollToResult("liveView");
-      renderNotice("liveView", "file-down", "계획서 PDF 생성 중", "분석 결과와 XAI 근거, 실행 시나리오를 문서로 정리하고 있습니다.");
+      const progressSteps = [
+        [14, "필지 경계와 지도 기준 정리"],
+        [36, "점수표와 XAI 근거 구성"],
+        [58, "경영 시나리오와 실행 단계 작성"],
+        [78, "표지와 본문 PDF 렌더링"],
+        [92, "로컬 다운로드 준비"]
+      ];
+      let progressIndex = 0;
+      renderReportProgress(8, "PDF 생성 중", "분석 결과를 문서 구조로 정리하고 있습니다.");
+      const progressTimer = window.setInterval(() => {
+        const step = progressSteps[Math.min(progressIndex, progressSteps.length - 1)];
+        renderReportProgress(step[0], "PDF 생성 중", step[1]);
+        progressIndex += 1;
+        if (progressIndex >= progressSteps.length) window.clearInterval(progressTimer);
+      }, 620);
       setButtonBusy("reportBtn", true, "생성 중");
       try {
         const blob = await api("/api/reports/plan", {
@@ -2512,12 +2554,26 @@
         a.download = "gruplan-forest-plan.pdf";
         a.click();
         URL.revokeObjectURL(url);
-        renderNotice("liveView", "file-check-2", "계획서 PDF 생성 완료", "다운로드가 시작되었습니다.");
+        renderReportProgress(100, "PDF 생성 완료", "다운로드가 시작되었습니다.");
       } catch (error) {
         showApiError(error, null, "liveView");
       } finally {
+        window.clearInterval(progressTimer);
         setButtonBusy("reportBtn", false);
       }
+    }
+
+    function renderReportProgress(percent, title, detail) {
+      const target = document.getElementById("liveView");
+      target.className = "";
+      target.innerHTML = `
+        <div class="progressNotice">
+          <div class="progressHead">${icon(percent >= 100 ? "file-check-2" : "file-down")}<span>${title} ${percent}%</span></div>
+          <div class="progressTrack" aria-hidden="true"><span class="progressFill" style="--progress:${percent}%"></span></div>
+          <span>${detail}</span>
+        </div>
+      `;
+      lucide.createIcons();
     }
 
     async function loadWeather() {

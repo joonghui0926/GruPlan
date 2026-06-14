@@ -49,6 +49,7 @@ class FeatureSet:
     economic_forest: bool = False
     planting_fit_count: int = 0
     stand_age_class: int | None = None
+    stand_species: str | None = None
     carbon_case_similarity: float | None = None
 
 
@@ -91,6 +92,7 @@ def score_features(features: FeatureSet) -> dict:
         "경사": features.slope_degree is not None,
         "산사태 위험": features.avg_landslide_grade is not None or features.high_landslide_ratio is not None,
         "영급": features.stand_age_class is not None,
+        "수종": bool(features.stand_species),
     }
     evidence_coverage = round(sum(1 for value in known.values() if value) / len(known) * 100)
     gaps = [label for label, present in known.items() if not present]

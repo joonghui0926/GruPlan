@@ -194,7 +194,7 @@ def _para(value, styles):
 
 def _feature_rows(features: dict) -> list[tuple[str, str, str]]:
     rows = []
-    for group, values in [("임상도", features.get("stand")), ("입지토양", features.get("soil"))]:
+    for group, values in [("추출 지표", features.get("derived")), ("임상도", features.get("stand")), ("입지토양", features.get("soil"))]:
         if not isinstance(values, dict):
             continue
         for key, value in list(values.items())[:8]:
