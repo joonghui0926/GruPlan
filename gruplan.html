@@ -2603,7 +2603,15 @@
 
     function selectedSigunguCode() {
       const pnu = state.analysis?.parcel?.pnu || document.getElementById("pnuText").textContent || "";
-      return /^\d{5}/.test(pnu) ? pnu.slice(0, 5) : "";
+      return /^\d{5}/.test(pnu) ? currentAdminCode(pnu.slice(0, 5)) : "";
+    }
+
+    function currentAdminCode(code) {
+      const text = String(code || "").replace(/\D/g, "");
+      const provinceUpdates = { 42: "51", 45: "52" };
+      return text.length >= 2 && provinceUpdates[text.slice(0, 2)]
+        ? `${provinceUpdates[text.slice(0, 2)]}${text.slice(2)}`
+        : text;
     }
 
     function filterItemsByKeyword(data, keyword) {

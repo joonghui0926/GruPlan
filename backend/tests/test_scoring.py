@@ -1,4 +1,5 @@
 from app.scoring import FeatureSet, distance_score, score_features
+from app.public_clients import _current_admin_code
 
 
 def test_distance_score_declines_with_distance():
@@ -23,3 +24,9 @@ def test_profit_scenario_with_good_access_and_economic_zone():
     )
     assert scores["profit"] > scores["conservation"]
     assert scores["recommendedScenario"] in {"수익형 경영", "탄소형 경영", "재난저감형 경영"}
+
+
+def test_current_admin_code_updates_special_province_codes():
+    assert _current_admin_code("42760", 5) == "51760"
+    assert _current_admin_code("45710", 5) == "52710"
+    assert _current_admin_code("51760", 5) == "51760"

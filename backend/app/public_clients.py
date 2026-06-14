@@ -125,6 +125,16 @@ def _friendly_upstream_message(source_id: str, response: httpx.Response) -> str:
     }.get(source_id, f"제공기관 응답을 현재 화면에 맞게 정리하지 못했습니다.")
 
 
+def _current_admin_code(value: str | None, length: int | None = None) -> str:
+    text = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if not text:
+        return ""
+    province_updates = {"42": "51", "45": "52"}
+    if text[:2] in province_updates:
+        text = f"{province_updates[text[:2]]}{text[2:]}"
+    return text[:length] if length else text
+
+
 class PublicApiClient:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -201,23 +211,29 @@ class PublicApiClient:
         return await fetch_json("http://apis.data.go.kr/1400377/mtweather/mountListSearch", params, "D7")
 
     async def economic_forest(self, search: str | None = None, frst_type: str | None = None) -> dict:
-        key = self.require_data_key("D8")
-        params = {"serviceKey": key, "pageNo": 1, "numOfRows": 20}
+        params = {"pageNo": 1, "numOfRows": 20}
         if search:
             params["searchPlcNm"] = search
         if frst_type:
             params["frstType"] = frst_type
-        return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/ecoFrstyOpenAPI", params, "D8")
+        return await self._fetch_forest_xml(
+            "http://api.forest.go.kr/openapi/service/fsInfoService/ecoFrstyOpenAPI",
+            params,
+            "D8",
+        )
 
     async def forest_companies(self, trade_name: str | None = None, captain: str | None = None) -> dict:
-        key = self.require_data_key("D10")
-        params = {"serviceKey": key, "pageNo": 1, "numOfRows": 20}
+        params = {"pageNo": 1, "numOfRows": 20}
         if trade_name:
             params["tradeName"] = trade_name
         if captain:
             params["captain"] = captain
         try:
-            return await fetch_xml("http://api.forest.go.kr/openapi/service/fsInfoService/corInfoOpenAPI", params, "D10")
+            return await self._fetch_forest_xml(
+                "http://api.forest.go.kr/openapi/service/fsInfoService/corInfoOpenAPI",
+                params,
+                "D10",
+            )
         except PublicDataError:
             return {
                 "items": [],
@@ -241,8 +257,8 @@ class PublicApiClient:
 
     async def fire_risk(self, **params) -> dict:
         key = self.require_data_key("D6")
-        sigungu_code = params.get("sigunguCode")
-        sido_code = params.get("sidoCode")
+        sigungu_code = _current_admin_code(params.get("sigunguCode"), 5)
+        sido_code = _current_admin_code(params.get("sidoCode"), 2)
         query = {
             "ServiceKey": key,
             "pageNo": 1,
@@ -260,3 +276,14 @@ class PublicApiClient:
         else:
             url = "https://apis.data.go.kr/1400377/forestPointV2/forestPointListGeongugSearchV2"
         return await fetch_json(url, query, "D6")
+
+    async def _fetch_forest_xml(self, url: str, base_params: dict, source_id: str) -> dict:
+        key = self.require_data_key(source_id)
+        errors: list[PublicDataError] = []
+        for key_name in ("ServiceKey", "serviceKey"):
+            params = {**base_params, key_name: key}
+            try:
+                return await fetch_xml(url, params, source_id)
+            except PublicDataError as exc:
+                errors.append(exc)
+        raise errors[-1]
