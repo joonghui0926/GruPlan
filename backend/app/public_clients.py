@@ -239,7 +239,7 @@ class PublicApiClient:
         params = {
             "service": "data",
             "request": "GetFeature",
-            "data": "LP_PA_CBND_BUBUN",
+            "data": "lp_pa_cbnd_bubun",
             "geomFilter": f"POINT({lon} {lat})",
             "crs": "EPSG:4326",
             "format": "json",
@@ -257,7 +257,7 @@ class PublicApiClient:
         params = {
             "service": "data",
             "request": "GetFeature",
-            "data": "LP_PA_CBND_BUBUN",
+            "data": "lp_pa_cbnd_bubun",
             "attrFilter": f"pnu:like:{pnu}",
             "crs": "EPSG:4326",
             "format": "json",
