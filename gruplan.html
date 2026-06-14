@@ -2350,6 +2350,17 @@
     }
 
     function renderFeatureTable(features = {}) {
+      const derivedOrder = [
+        "standAgeClass",
+        "standSpecies",
+        "plantingFitCount",
+        "economicForest",
+        "slopeDegree",
+        "roadDistanceM",
+        "roadDensityMPerHa",
+        "avgLandslideGrade",
+        "fireRiskIndex"
+      ];
       const sections = [
         ["추출 지표", features.derived],
         ["임상도 교차", features.standMatch],
@@ -2358,10 +2369,20 @@
       ];
       const rows = sections.flatMap(([group, values]) => {
         if (!values || typeof values !== "object") return [];
-        return Object.entries(values)
-          .filter(([key, value]) => value !== null && value !== undefined && value !== "" && !String(key).toLowerCase().includes("geom"))
-          .slice(0, 8)
-          .map(([key, value]) => [group, key, formatFeatureValue(value)]);
+        const entries = group === "추출 지표"
+          ? derivedOrder
+              .filter((key) => Object.prototype.hasOwnProperty.call(values, key))
+              .map((key) => [key, values[key]])
+              .concat(Object.entries(values).filter(([key]) => !derivedOrder.includes(key)))
+          : Object.entries(values);
+        return entries
+          .filter(([key, value]) => !String(key).toLowerCase().includes("geom") && (group === "추출 지표" || !isBlank(value)))
+          .slice(0, group === "추출 지표" ? 12 : 8)
+          .map(([key, value]) => [
+            group,
+            featureLabelFor(key),
+            group === "추출 지표" ? formatDerivedValue(key, value) : formatFeatureValue(value)
+          ]);
       });
       if (!rows.length) {
         return `
@@ -2376,6 +2397,46 @@
           <tbody>${rows.map(([group, key, value]) => `<tr><td>${group}</td><td>${key}</td><td>${value}</td></tr>`).join("")}</tbody>
         </table>
       `;
+    }
+
+    function featureLabelFor(key) {
+      const labels = {
+        standAgeClass: "영급",
+        standSpecies: "수종",
+        plantingFitCount: "조림 후보",
+        economicForest: "경제림 구역",
+        slopeDegree: "경사",
+        roadDistanceM: "가까운 임도",
+        roadDensityMPerHa: "임도 밀도",
+        avgLandslideGrade: "산사태 평균등급",
+        fireRiskIndex: "산불위험지수",
+        matchType: "매칭 방식",
+        distanceM: "거리",
+        overlapAreaM2: "교차 면적"
+      };
+      return labels[key] || key;
+    }
+
+    function formatDerivedValue(key, value) {
+      if (isBlank(value)) {
+        const fallback = {
+          standAgeClass: "임상도 영급 속성 없음",
+          standSpecies: "임상도 수종 속성 없음",
+          slopeDegree: "입지토양도 경사 속성 없음",
+          roadDistanceM: "임도 거리 산정값 없음",
+          avgLandslideGrade: "산사태 격자값 없음",
+          fireRiskIndex: "실시간 산불위험 값 없음"
+        };
+        return fallback[key] || "원천값 없음";
+      }
+      if (key === "standAgeClass") return `${value}영급`;
+      if (key === "plantingFitCount") return `${value}건`;
+      if (key === "economicForest") return value ? "포함" : "미포함";
+      if (key === "slopeDegree") return `${formatFeatureValue(value)}도`;
+      if (key === "roadDistanceM") return `${formatFeatureValue(value)}m`;
+      if (key === "roadDensityMPerHa") return `${formatFeatureValue(value)}m/ha`;
+      if (key === "avgLandslideGrade") return `${formatFeatureValue(value)}등급`;
+      return formatFeatureValue(value);
     }
 
     function formatInputMap(inputs = {}) {
