@@ -2343,6 +2343,8 @@
 
     function renderFeatureTable(features = {}) {
       const sections = [
+        ["추출 지표", features.derived],
+        ["임상도 교차", features.standMatch],
         ["임상도", features.stand],
         ["입지토양", features.soil]
       ];

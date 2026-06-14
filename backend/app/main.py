@@ -59,32 +59,50 @@ class ReportRequest(BaseModel):
 
 STAND_AGE_KEYS = [
     "age_class",
+    "age",
     "agcls_cd",
+    "agcls_nm",
     "agcls",
     "영급",
     "영급코드",
+    "영급명",
     "임령급",
+    "나무나이",
+    "수령",
     "agecls",
     "AGE_CLASS",
+    "AGE",
     "AGCLS_CD",
+    "AGCLS_NM",
 ]
 STAND_SPECIES_KEYS = [
     "species",
     "tree_species",
+    "tree_species_name",
     "koftr_group",
     "koftr_group_cd",
+    "koftr_group_nm",
     "koftr_cd",
+    "koftr_nm",
     "frtp_cd",
+    "frtp_nm",
+    "sptree",
+    "sptree_nm",
+    "forest_type",
     "수종",
     "대표수종",
     "주요수종",
     "수종명",
+    "주요수종명",
     "임상",
     "임종",
     "KOFTR_GROUP",
     "KOFTR_GROUP_CD",
+    "KOFTR_GROUP_NM",
     "KOFTR_CD",
+    "KOFTR_NM",
     "FRTP_CD",
+    "FRTP_NM",
 ]
 SLOPE_KEYS = [
     "slope_degree",
@@ -369,11 +387,29 @@ async def _query_spatial_features(payload: AnalysisRequest):
       limit 1
     ),
     stand as (
-      select properties
+      select
+        s.properties,
+        case
+          when s.geom is null then null
+          when ST_Intersects(a.geom, s.geom) then '필지 교차'
+          else '인근 보정'
+        end as match_type,
+        case when s.geom is null then null else ST_Distance(a.geom::geography, s.geom::geography) end as distance_m,
+        case when s.geom is null or not ST_Intersects(a.geom, s.geom) then 0
+             else ST_Area(ST_Intersection(a.geom, s.geom)::geography)
+        end as overlap_area_m2
       from area_calc a
-      join forest_stands s on ST_Intersects(a.geom, s.geom)
-      order by ST_Area(ST_Intersection(a.geom, s.geom)) desc
-      limit 1
+      left join lateral (
+        select properties, geom
+        from forest_stands s
+        where ST_Intersects(a.geom, s.geom)
+           or ST_DWithin(a.geom::geography, s.geom::geography, 250)
+        order by
+          case when ST_Intersects(a.geom, s.geom) then 0 else 1 end,
+          case when ST_Intersects(a.geom, s.geom) then ST_Area(ST_Intersection(a.geom, s.geom)::geography) else 0 end desc,
+          s.geom <-> a.geom
+        limit 1
+      ) s on true
     ),
     planting as (
       select count(*) as planting_fit_count
@@ -429,6 +465,11 @@ async def _query_spatial_features(payload: AnalysisRequest):
       jsonb_build_object(
         'soil', soil.properties,
         'stand', stand.properties,
+        'standMatch', jsonb_build_object(
+          'matchType', stand.match_type,
+          'distanceM', stand.distance_m,
+          'overlapAreaM2', stand.overlap_area_m2
+        ),
         'surrounding', jsonb_build_object(
           'nearbyParcelCount250m', surrounding_parcels.nearby_parcel_count,
           'nearbyRoadCount500m', road_context.nearby_road_count,
@@ -510,8 +551,11 @@ def _extract_text_property(properties: dict, keys: list[str]) -> str | None:
     text = str(value).strip()
     if not text:
         return None
-    if key and _normalize_property_key(key) in {"koftrgroupcd", "frtpcd"}:
+    normalized_key = _normalize_property_key(key or "")
+    if normalized_key in {"koftrgroupcd", "koftrgroup", "frtpcd", "frtp"}:
         return {"1": "침엽수림", "2": "활엽수림", "3": "혼효림"}.get(text, f"수종 코드 {text}")
+    if normalized_key.endswith("cd") and text.isdigit():
+        return f"수종 코드 {text}"
     return text
 
 

@@ -16,6 +16,13 @@ def test_extracts_stand_age_and_species_from_public_data_keys():
     assert _extract_text_property(properties, STAND_SPECIES_KEYS) == "활엽수림"
 
 
+def test_extracts_stand_names_from_nm_fields():
+    properties = {"AGCLS_NM": "5영급", "KOFTR_NM": "소나무"}
+
+    assert _extract_int_property(properties, STAND_AGE_KEYS) == 5
+    assert _extract_text_property(properties, STAND_SPECIES_KEYS) == "소나무"
+
+
 def test_extracts_korean_stand_fields():
     properties = {"영급": "5영급", "수종": "소나무"}
 
