@@ -232,7 +232,7 @@ class PublicApiClient:
             "query": query,
             "key": key,
         }
-        return await fetch_json("https://api.vworld.kr/req/search", params, "D12", self.vworld_headers())
+        return await fetch_json("https://api.vworld.kr/req/search", params, "D12")
 
     async def cadastral_by_point(self, lon: float, lat: float) -> dict:
         key = self.require_vworld_key()
@@ -250,7 +250,7 @@ class PublicApiClient:
             "size": 10,
             "key": key,
         }
-        return await fetch_json("https://api.vworld.kr/req/data", params, "D12", self.vworld_headers())
+        return await fetch_json("https://api.vworld.kr/req/data", params, "D12")
 
     async def cadastral_by_pnu(self, pnu: str) -> dict:
         key = self.require_vworld_key()
@@ -268,7 +268,7 @@ class PublicApiClient:
             "size": 10,
             "key": key,
         }
-        return await fetch_json("https://api.vworld.kr/req/data", params, "D12", self.vworld_headers())
+        return await fetch_json("https://api.vworld.kr/req/data", params, "D12")
 
     async def mountain_weather(self, obsid: str | None = None, local_area: str | None = None) -> dict:
         key = self.require_data_key("D7")
