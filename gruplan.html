@@ -2547,7 +2547,7 @@
     async function loadCompanies() {
       startLiveLoading("companyBtn", "building-2", "법인 후보 생성 중", "지역과 작업 성격에 맞는 수행 후보를 정리하고 있습니다.");
       try {
-        const data = await api("/api/forest-companies");
+        const data = await api(`/api/forest-companies${queryString({ region: selectedAreaKeyword() })}`);
         const filtered = filterItemsByKeyword(data, selectedAreaKeyword());
         renderLiveItems("liveView", "building-2", filtered.length ? "산림사업법인 지역 후보" : "산림사업법인", filtered.length ? filtered : data, ["tradeName", "tradename", "tradeNm", "companyName", "corpNm", "captain", "address", "specnm", "technics", "status"]);
       } catch (error) {

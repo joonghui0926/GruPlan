@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+import json
+from functools import lru_cache
 from json import JSONDecodeError
+from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -144,6 +147,50 @@ def _current_admin_code(value: str | None, length: int | None = None) -> str:
     return text[:length] if length else text
 
 
+@lru_cache(maxsize=1)
+def _forest_company_snapshot() -> dict | None:
+    path = Path(__file__).resolve().parent / "data" / "forest_companies_snapshot.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _filter_snapshot_items(items: list[dict], *terms: str | None, limit: int = 60) -> list[dict]:
+    keywords = [str(term).strip() for term in terms if term and str(term).strip()]
+    if not keywords:
+        return items[:limit]
+
+    matched = []
+    for item in items:
+        text = " ".join(str(value) for value in item.values() if value is not None)
+        if all(keyword in text for keyword in keywords):
+            matched.append(item)
+        if len(matched) >= limit:
+            break
+    return matched
+
+
+def _snapshot_response(snapshot: dict, items: list[dict]) -> dict:
+    return {
+        "response": {
+            "header": {"resultCode": "00", "resultMsg": "OFFICIAL SNAPSHOT"},
+            "body": {
+                "items": {"item": items},
+                "numOfRows": len(items),
+                "pageNo": 1,
+                "totalCount": len(items),
+            },
+        },
+        "snapshot": {
+            "sourceId": snapshot.get("sourceId"),
+            "sourceName": snapshot.get("sourceName"),
+            "sourceUrl": snapshot.get("sourceUrl"),
+            "fetchedAt": snapshot.get("fetchedAt"),
+            "totalCount": snapshot.get("totalCount"),
+        },
+    }
+
+
 class PublicApiClient:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -231,7 +278,12 @@ class PublicApiClient:
             "D8",
         )
 
-    async def forest_companies(self, trade_name: str | None = None, captain: str | None = None) -> dict:
+    async def forest_companies(
+        self,
+        trade_name: str | None = None,
+        captain: str | None = None,
+        region: str | None = None,
+    ) -> dict:
         params = {"pageNo": 1, "numOfRows": 20}
         if trade_name:
             params["tradeName"] = trade_name
@@ -244,6 +296,11 @@ class PublicApiClient:
                 "D10",
             )
         except PublicDataError:
+            snapshot = _forest_company_snapshot()
+            if snapshot:
+                items = snapshot.get("items") or []
+                filtered = _filter_snapshot_items(items, region, trade_name, captain)
+                return _snapshot_response(snapshot, filtered)
             return {
                 "items": [],
                 "notice": "산림사업법인 목록은 제공기관 응답 형식 확인 후 다시 표시됩니다. 현재 리포트에서는 작업 종류와 지역 조건만 상담 준비 항목으로 남깁니다.",

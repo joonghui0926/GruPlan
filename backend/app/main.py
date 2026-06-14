@@ -195,9 +195,9 @@ async def fire_risk(sigunguCode: str | None = None):
 
 
 @app.get("/api/forest-companies")
-async def forest_companies(tradeName: str | None = None, captain: str | None = None):
+async def forest_companies(tradeName: str | None = None, captain: str | None = None, region: str | None = None):
     try:
-        return await public_client.forest_companies(trade_name=tradeName, captain=captain)
+        return await public_client.forest_companies(trade_name=tradeName, captain=captain, region=region)
     except PublicDataError as exc:
         return _public_error(exc)
 

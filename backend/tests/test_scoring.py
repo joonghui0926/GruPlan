@@ -1,5 +1,5 @@
 from app.scoring import FeatureSet, distance_score, score_features
-from app.public_clients import _current_admin_code
+from app.public_clients import _current_admin_code, _filter_snapshot_items, _forest_company_snapshot
 
 
 def test_distance_score_declines_with_distance():
@@ -30,3 +30,11 @@ def test_current_admin_code_updates_special_province_codes():
     assert _current_admin_code("42760", 5) == "51760"
     assert _current_admin_code("45710", 5) == "52710"
     assert _current_admin_code("51760", 5) == "51760"
+
+
+def test_forest_company_snapshot_has_regional_candidates():
+    snapshot = _forest_company_snapshot()
+    assert snapshot
+    items = _filter_snapshot_items(snapshot["items"], "평창군")
+    assert items
+    assert all("평창군" in " ".join(str(value) for value in item.values()) for item in items)
