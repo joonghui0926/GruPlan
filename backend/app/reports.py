@@ -53,6 +53,8 @@ def build_plan_pdf(analysis: dict) -> bytes:
     sources = analysis.get("sources", [])
     tasks = analysis.get("workPlan", [])
     features = analysis.get("features", {})
+    scenario_plan = analysis.get("scenarioPlan") or {}
+    scenario_reasons = analysis.get("scenarioReasons") or []
     narrative = str(analysis.get("narrative") or "").strip()
     scenario = str(scores.get("recommendedScenario") or "확인 필요")
     area = parcel.get("areaHa", "확인 필요")
@@ -90,6 +92,32 @@ def build_plan_pdf(analysis: dict) -> bytes:
             if paragraph:
                 story.append(Paragraph(escape(paragraph), styles["KoBody"]))
                 story.append(Spacer(1, 3))
+
+    if scenario_plan:
+        story.append(Paragraph("추천 시나리오 설계", styles["KoHeading"]))
+        story.append(_para(scenario_plan.get("thesis", ""), styles))
+        plan_rows = [["구분", "내용"]]
+        plan_rows.append(["작용 근거", _para(_list_text(scenario_plan.get("context") or []), styles)])
+        plan_rows.append(["운영 아이디어", _para(_list_text(scenario_plan.get("ideas") or []), styles)])
+        phase_text = []
+        for phase in scenario_plan.get("phases") or []:
+            phase_text.append(f"{phase.get('name', '')}: " + " / ".join(phase.get("actions") or []))
+        plan_rows.append(["실행 단계", _para(_list_text(phase_text), styles)])
+        plan_rows.append(["주의할 점", _para(_list_text(scenario_plan.get("risks") or []), styles)])
+        story.append(Table(plan_rows, colWidths=[32 * mm, 126 * mm], style=_table_style(font_name, font_size=7, leading=10)))
+
+    if scenario_reasons:
+        story.append(Paragraph("시나리오 비교 근거", styles["KoHeading"]))
+        rows = [["방향", "점수", "이 필지에서 그렇게 나온 이유", "작용값", "다음 확인"]]
+        for item in scenario_reasons:
+            rows.append([
+                item.get("scenario", ""),
+                str(round(item.get("score") or 0)),
+                _para(item.get("judgement", ""), styles),
+                _para(_list_text(item.get("drivers") or []), styles),
+                _para(item.get("nextCheck", ""), styles),
+            ])
+        story.append(Table(rows, colWidths=[18 * mm, 15 * mm, 58 * mm, 32 * mm, 35 * mm], style=_table_style(font_name, font_size=7, leading=10)))
 
     story.append(Paragraph("시나리오 점수", styles["KoHeading"]))
     score_rows = [["지표", "점수"]]
@@ -183,6 +211,10 @@ def _input_summary(inputs: dict) -> str:
             continue
         rows.append(f"{key}: {_format_feature_value(value)}")
     return "<br/>".join(rows) if rows else "원천값 확인"
+
+
+def _list_text(items: list) -> str:
+    return "<br/>".join(str(item) for item in items if item)
 
 
 def _format_feature_value(value) -> str:

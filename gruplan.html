@@ -487,13 +487,21 @@
     }
     .evidenceItem {
       display: grid;
-      grid-template-columns: 40px 1fr;
+      grid-template-columns: 40px 1fr 24px;
       gap: 10px;
+      width: 100%;
       padding: 11px 0;
+      border: 0;
       border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
       font-size: 12px;
     }
     .evidenceItem:last-child { border-bottom: 0; }
+    .evidenceItem:hover, .evidenceItem.isActive {
+      background: rgba(228,239,223,.55);
+    }
     .evidenceItem code {
       color: var(--pine);
       font-family: "Space Grotesk", sans-serif;
@@ -505,6 +513,11 @@
       margin-bottom: 2px;
     }
     .evidenceItem span {
+      color: var(--muted);
+    }
+    .evidenceArrow {
+      display: grid;
+      place-items: center;
       color: var(--muted);
     }
     .taskList {
@@ -572,6 +585,9 @@
     .statusBadge.ready { color: var(--ok); }
     .statusBadge.need { color: var(--warn); }
     .statusBadge.check { color: var(--sky); }
+    .isBusy .icon {
+      animation: spin .8s linear infinite;
+    }
 
     .band {
       padding: 86px 42px;
@@ -956,6 +972,145 @@
     .reportTable td strong {
       color: var(--ink);
     }
+    .sourceMiniLine {
+      display: block;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .scenarioPlan {
+      margin-top: 26px;
+      padding-top: 22px;
+      border-top: 2px solid var(--forest);
+    }
+    .scenarioPlanLead {
+      margin: 0 0 18px;
+      max-width: 920px;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .scenarioPlanGrid {
+      display: grid;
+      grid-template-columns: minmax(260px, .9fr) minmax(420px, 1.1fr);
+      gap: 28px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .scenarioPlanSection {
+      padding: 18px 0;
+    }
+    .scenarioPlanSection h4, .sourceDetailSection h4 {
+      margin: 0 0 10px;
+      color: var(--forest);
+      font-size: 13px;
+    }
+    .scenarioPlanSection ul, .sourceDetailSection ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 9px;
+    }
+    .scenarioPlanSection li, .sourceDetailSection li {
+      position: relative;
+      padding-left: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .scenarioPlanSection li::before, .sourceDetailSection li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: .68em;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--pine);
+    }
+    .scenarioPhase {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .scenarioPhase:last-child { border-bottom: 0; }
+    .scenarioPhase strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--ink);
+    }
+    .sourceEvidenceLayout {
+      display: grid;
+      grid-template-columns: minmax(280px, .72fr) minmax(420px, 1.28fr);
+      gap: 28px;
+      align-items: start;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .sourceEvidenceLayout .evidenceList {
+      border-top: 0;
+    }
+    .sourceDetailPane {
+      min-height: 260px;
+      padding: 18px 0 22px;
+      border-left: 1px solid var(--line);
+      padding-left: 26px;
+    }
+    .sourceDetailHead {
+      display: grid;
+      gap: 5px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .sourceDetailHead code {
+      color: var(--pine);
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 800;
+    }
+    .sourceDetailHead h3 {
+      margin: 0;
+      color: var(--ink);
+      font-size: 20px;
+      line-height: 1.35;
+    }
+    .sourceDetailHead p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .sourceDetailMeta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .sourceDetailMeta span strong {
+      color: var(--forest);
+      margin-right: 5px;
+    }
+    .sourceDetailGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      margin-top: 18px;
+    }
+    .sourceFormulaList {
+      display: grid;
+      gap: 10px;
+    }
+    .sourceFormulaItem {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .sourceFormulaItem strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
     .qualityLine {
       display: grid;
       grid-template-columns: 120px 1fr 54px;
@@ -1064,6 +1219,16 @@
       }
       .mapStage { min-height: 760px; }
       .sourceRail { left: 26px; right: 26px; width: auto; }
+      .scenarioPlanGrid,
+      .sourceEvidenceLayout,
+      .sourceDetailGrid {
+        grid-template-columns: 1fr;
+      }
+      .sourceDetailPane {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        padding-left: 0;
+      }
     }
     @media (max-width: 760px) {
       .topNav { padding: 0 16px; }
@@ -1090,7 +1255,7 @@
       .metaGrid, .actionStack, .matrix { grid-template-columns: 1fr; }
       .analysisModal { padding: 12px; }
       .analysisTop { padding: 18px 18px 14px; }
-      .analysisSteps, .analysisGrid, .impactGrid { grid-template-columns: 1fr; }
+      .analysisSteps, .analysisGrid, .impactGrid, .scenarioPlanGrid, .sourceEvidenceLayout, .sourceDetailGrid { grid-template-columns: 1fr; }
       .radarPanel { grid-template-columns: 1fr; }
       .radarPanel svg { margin: 0 auto; }
       .analysisStep, .impactCell { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -1723,17 +1888,7 @@
         `;
       }).join("");
 
-      const evidenceRows = sources.slice(0, 5).map((source) => `
-        <div class="evidenceItem">
-          <code>${source.id || ""}</code>
-          <div><strong>${source.name || "데이터 출처"}</strong><span>${source.status || "분석 근거"}</span></div>
-        </div>
-      `).join("") || `
-        <div class="evidenceItem">
-          <code>DATA</code>
-          <div><strong>연결된 공공데이터</strong><span>분석 응답의 출처 정보가 표시됩니다.</span></div>
-        </div>
-      `;
+      const evidenceRows = renderEvidenceRows(sources.slice(0, 5));
 
       document.getElementById("panelIntro").textContent = `${parcel.address || parcel.pnu || "선택한 필지"}의 추천 방향은 ${scores.recommendedScenario || "확인 필요"}입니다.`;
       document.getElementById("resultView").className = "analysisDeck";
@@ -1754,6 +1909,7 @@
         <button id="openAnalysisWindowBtn" class="quietBtn fullAction">${icon("panel-top-open")}분석 창 다시 보기</button>
       `;
       document.getElementById("openAnalysisWindowBtn").addEventListener("click", () => renderModalAnalysis(payload));
+      bindPanelEvidenceButtons(payload);
 
       document.getElementById("taskList").innerHTML = tasks.length
         ? tasks.map((task, index) => `
@@ -1767,7 +1923,7 @@
       lucide.createIcons();
     }
 
-    function renderModalAnalysis(payload) {
+    function renderModalAnalysis(payload, selectedSourceId = null) {
       const scores = payload.scores || {};
       const parcel = payload.parcel || {};
       const tasks = payload.workPlan || [];
@@ -1797,18 +1953,14 @@
           <div><strong>${task.title}</strong><span>${task.reason} · ${task.season}</span></div>
         </div>
       `).join("");
-      const evidenceRows = sources.map((source) => `
-        <div class="evidenceItem">
-          <code>${source.id}</code>
-          <div><strong>${source.name}</strong><span>${source.status || "분석 근거"}</span></div>
-        </div>
-      `).join("");
-      const scenarioTable = renderScenarioTable(scores);
+      const evidenceRows = renderEvidenceRows(sources);
+      const scenarioTable = renderScenarioTable(payload);
       const xaiTable = renderXaiTable(payload.xai);
       const qualityRows = renderQualityRows(payload);
       const calendarRows = renderWorkCalendar(tasks);
       const featureTable = renderFeatureTable(payload.features);
       const radarLegend = renderRadarLegend(scores);
+      const scenarioPlan = renderScenarioPlan(payload);
 
       document.getElementById("analysisModalBody").innerHTML = `
         <div class="decisionBlock" style="border-left-color:${profile.color};background:${profile.background}">
@@ -1822,6 +1974,7 @@
           <div class="impactCell"><small>우선 작업</small><strong>${tasks.length}건</strong></div>
           <div class="impactCell"><small>위험 점수</small><strong>${Math.round(scores.disasterRisk ?? 0)}</strong></div>
         </div>
+        ${scenarioPlan}
         <div class="analysisGrid">
           <div>
             <div class="modalSectionTitle">${icon("sparkles")}판단 요약</div>
@@ -1845,11 +1998,17 @@
           <div>${qualityRows}</div>
           <div class="modalSectionTitle">${icon("rows-3")}산림공간 지표</div>
           ${featureTable}
-          <div class="evidenceList">${evidenceRows}</div>
+          <div class="modalSectionTitle">${icon("file-search")}데이터별 판단 근거</div>
+          <div class="sourceEvidenceLayout">
+            <div class="evidenceList">${evidenceRows}</div>
+            <div id="sourceDetailPane" class="sourceDetailPane"></div>
+          </div>
           <div class="modalSectionTitle">${icon("calendar-days")}실행 일정표</div>
           ${calendarRows}
         </div>
       `;
+      bindModalEvidenceButtons(payload);
+      selectSourceDetail(selectedSourceId || sources[0]?.id, payload);
       lucide.createIcons();
     }
 
@@ -1926,18 +2085,180 @@
       }).join("");
     }
 
-    function renderScenarioTable(scores) {
-      const rows = [
-        ["수익형", scores.profit, "임도 접근성과 경제림 가능성을 중심으로 생산 효율을 검토", "작업 동선, 수종, 사업비"],
-        ["탄소형", scores.carbon, "면적과 영급을 바탕으로 장기 흡수량과 등록 가능성을 검토", "영급, 수종, 탄소상쇄 사례"],
-        ["보전형", scores.conservation, "경사와 재난 위험을 중심으로 훼손 최소화를 검토", "보전 구역, 위험 지점, 작업 제한"],
-        ["재난저감", scores.resilience, "산사태와 산불 위험을 줄이는 사전 작업을 검토", "배수, 방제, 위험 계절"]
-      ].sort((a, b) => (b[1] || 0) - (a[1] || 0));
+    function renderScenarioPlan(payload) {
+      const plan = payload.scenarioPlan;
+      if (!plan) return "";
+      const contextRows = (plan.context || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      const ideaRows = (plan.ideas || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      const riskRows = (plan.risks || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      const phaseRows = (plan.phases || []).map((phase) => `
+        <div class="scenarioPhase">
+          <strong>${escapeHtml(phase.name || "")}</strong>
+          <ul>${(phase.actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+      `).join("");
+      return `
+        <div class="scenarioPlan">
+          <div class="modalSectionTitle">${icon("compass")}추천 시나리오 설계</div>
+          <p class="scenarioPlanLead">${escapeHtml(plan.thesis || "")}</p>
+          <div class="scenarioPlanGrid">
+            <div>
+              <div class="scenarioPlanSection">
+                <h4>이 필지에서 강하게 작용한 근거</h4>
+                <ul>${contextRows}</ul>
+              </div>
+              <div class="scenarioPlanSection">
+                <h4>운영 아이디어</h4>
+                <ul>${ideaRows}</ul>
+              </div>
+              <div class="scenarioPlanSection">
+                <h4>주의할 점</h4>
+                <ul>${riskRows}</ul>
+              </div>
+            </div>
+            <div class="scenarioPlanSection">
+              <h4>실행 단계</h4>
+              ${phaseRows}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEvidenceRows(sources = []) {
+      if (!sources.length) {
+        return `
+          <button type="button" class="evidenceItem" disabled>
+            <code>DATA</code>
+            <span><strong>연결된 공공데이터</strong><span>분석 응답의 출처 정보가 표시됩니다.</span></span>
+            <span></span>
+          </button>
+        `;
+      }
+      return sources.map((source) => `
+        <button type="button" class="evidenceItem" data-source-id="${escapeHtml(source.id || "")}" aria-label="${escapeHtml(source.name || "데이터 근거")} 자세히 보기">
+          <code>${escapeHtml(source.id || "")}</code>
+          <span><strong>${escapeHtml(source.name || "데이터 출처")}</strong><span>이 필지에서 작용한 근거 보기</span></span>
+          <span class="evidenceArrow">${icon("chevron-right")}</span>
+        </button>
+      `).join("");
+    }
+
+    function bindPanelEvidenceButtons(payload) {
+      document.querySelectorAll("#resultView .evidenceItem[data-source-id]").forEach((button) => {
+        button.addEventListener("click", () => renderModalAnalysis(payload, button.dataset.sourceId));
+      });
+      lucide.createIcons();
+    }
+
+    function bindModalEvidenceButtons(payload) {
+      document.querySelectorAll("#analysisModalBody .evidenceItem[data-source-id]").forEach((button) => {
+        button.addEventListener("click", () => selectSourceDetail(button.dataset.sourceId, payload));
+      });
+    }
+
+    function selectSourceDetail(sourceId, payload) {
+      const pane = document.getElementById("sourceDetailPane");
+      if (!pane || !sourceId) return;
+      const source = (payload.sources || []).find((item) => item.id === sourceId);
+      if (!source) return;
+      document.querySelectorAll("#analysisModalBody .evidenceItem[data-source-id]").forEach((button) => {
+        button.classList.toggle("isActive", button.dataset.sourceId === sourceId);
+      });
+      pane.innerHTML = renderSourceDetail(source, payload);
+      lucide.createIcons();
+    }
+
+    function renderSourceDetail(source, payload) {
+      const detail = source.analysisDetail || {};
+      const xaiMatches = (payload.xai?.scoreExplanations || []).filter((item) => (item.sourceIds || []).includes(source.id));
+      const parcelEvidence = source.parcelEvidence || [];
+      const evidenceRows = parcelEvidence.length
+        ? parcelEvidence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+        : `<li>이 데이터의 필지별 근거값은 다음 분석 실행에서 보강됩니다.</li>`;
+      const formulaRows = xaiMatches.length
+        ? xaiMatches.map((item) => `
+          <div class="sourceFormulaItem">
+            <strong>${escapeHtml(item.metric || "")} ${Math.round(item.score ?? 0)}점</strong>
+            <span>${escapeHtml(item.interpretation || "")}</span>
+            <span class="sourceMiniLine">${formatInputMap(item.inputs || {})}</span>
+          </div>
+        `).join("")
+        : `<div class="sourceFormulaItem"><strong>직접 산식 없음</strong><span>이 데이터는 경계 확정이나 보조 판단 근거로 사용됐습니다.</span></div>`;
+      const checkRows = (detail.fieldCheck || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      return `
+        <div class="sourceDetailHead">
+          <code>${escapeHtml(source.id || "")}</code>
+          <h3>${escapeHtml(source.name || "")}</h3>
+          <p>${escapeHtml(detail.role || source.usage || "")}</p>
+          <div class="sourceDetailMeta">
+            <span><strong>기관</strong>${escapeHtml(source.provider || "")}</span>
+            <span><strong>형태</strong>${escapeHtml(source.kind || "")}</span>
+            <span><strong>분석 테이블</strong>${escapeHtml(source.table_name || "실시간 조회")}</span>
+          </div>
+        </div>
+        <div class="sourceDetailGrid">
+          <div class="sourceDetailSection">
+            <h4>이 필지에서 실제로 작용한 근거</h4>
+            <ul>${evidenceRows}</ul>
+          </div>
+          <div class="sourceDetailSection">
+            <h4>점수와 연결된 문장</h4>
+            <div class="sourceFormulaList">${formulaRows}</div>
+          </div>
+        </div>
+        <div class="sourceDetailSection" style="margin-top:18px">
+          <h4>실행 전에 더 확인할 점</h4>
+          <ul>${checkRows || `<li>${escapeHtml(detail.caveat || "원천 데이터 갱신일과 현장 상태를 확인합니다.")}</li>`}</ul>
+        </div>
+      `;
+    }
+
+    function renderScenarioTable(payload) {
+      const scores = payload.scores || {};
+      const rows = payload.scenarioReasons || [
+        {
+          scenario: "수익형",
+          score: scores.profit,
+          judgement: "수익형 판단에 필요한 필지별 근거가 아직 생성되지 않았습니다.",
+          drivers: [],
+          nextCheck: "공간분석을 다시 실행해 원천 지표를 확인합니다."
+        },
+        {
+          scenario: "탄소형",
+          score: scores.carbon,
+          judgement: "탄소형 판단에 필요한 필지별 근거가 아직 생성되지 않았습니다.",
+          drivers: [],
+          nextCheck: "공간분석을 다시 실행해 원천 지표를 확인합니다."
+        },
+        {
+          scenario: "보전형",
+          score: scores.conservation,
+          judgement: "보전형 판단에 필요한 필지별 근거가 아직 생성되지 않았습니다.",
+          drivers: [],
+          nextCheck: "공간분석을 다시 실행해 원천 지표를 확인합니다."
+        },
+        {
+          scenario: "재난저감",
+          score: scores.resilience,
+          judgement: "재난저감 판단에 필요한 필지별 근거가 아직 생성되지 않았습니다.",
+          drivers: [],
+          nextCheck: "공간분석을 다시 실행해 원천 지표를 확인합니다."
+        }
+      ];
       return `
         <table class="reportTable">
-          <thead><tr><th>방향</th><th>점수</th><th>판단 기준</th><th>현장 확인</th></tr></thead>
+          <thead><tr><th>방향</th><th>점수</th><th>이 필지에서 그렇게 나온 이유</th><th>작용값</th><th>다음 확인</th></tr></thead>
           <tbody>
-            ${rows.map(([name, score, basis, check]) => `<tr><td><strong>${name}</strong></td><td>${Math.round(score || 0)}</td><td>${basis}</td><td>${check}</td></tr>`).join("")}
+            ${rows.map((row) => `
+              <tr>
+                <td><strong>${escapeHtml(row.scenario || "")}</strong></td>
+                <td>${Math.round(row.score || 0)}</td>
+                <td>${escapeHtml(row.judgement || "")}</td>
+                <td>${(row.drivers || []).map((item) => `<span class="sourceMiniLine">${escapeHtml(item)}</span>`).join("")}</td>
+                <td>${escapeHtml(row.nextCheck || "")}</td>
+              </tr>
+            `).join("")}
           </tbody>
         </table>
       `;
@@ -2166,8 +2487,12 @@
     async function downloadReport() {
       if (!state.analysis) {
         renderNotice("resultView", "file-warning", "분석 결과가 먼저 필요합니다.", "실제 분석 결과 없이 보고서를 만들지 않습니다.");
+        scrollToResult("resultView");
         return;
       }
+      scrollToResult("liveView");
+      renderNotice("liveView", "file-down", "계획서 PDF 생성 중", "분석 결과와 XAI 근거, 실행 시나리오를 문서로 정리하고 있습니다.");
+      setButtonBusy("reportBtn", true, "생성 중");
       try {
         const blob = await api("/api/reports/plan", {
           method: "POST",
@@ -2179,52 +2504,102 @@
         a.download = "gruplan-forest-plan.pdf";
         a.click();
         URL.revokeObjectURL(url);
+        renderNotice("liveView", "file-check-2", "계획서 PDF 생성 완료", "다운로드가 시작되었습니다.");
       } catch (error) {
-        showApiError(error);
+        showApiError(error, null, "liveView");
+      } finally {
+        setButtonBusy("reportBtn", false);
       }
     }
 
     async function loadWeather() {
-      renderNotice("liveView", "cloud-sun", "산악기상 조회 중", "가까운 관측 정보를 기준으로 작업 위험을 살핍니다.");
+      startLiveLoading("weatherBtn", "cloud-sun", "산악기상 생성 중", "관측 응답을 작업 위험 항목으로 정리하고 있습니다.");
       try {
-        const data = await api("/api/live/mountain-weather");
+        const data = await api(`/api/live/mountain-weather${queryString({ localArea: selectedAreaKeyword() })}`);
         renderLiveItems("liveView", "cloud-sun", "산악기상", data, ["localArea", "obsid", "tm", "ta", "temp", "hm", "ws", "wd", "rn", "pa", "ts"]);
       } catch (error) {
         showApiError(error, "D7", "liveView");
+      } finally {
+        setButtonBusy("weatherBtn", false);
       }
     }
 
     async function loadFireRisk() {
-      renderNotice("liveView", "flame", "산불위험 조회 중", "시군구 단위 산불위험 예보를 확인합니다.");
+      startLiveLoading("fireBtn", "flame", "산불위험 생성 중", "산불위험 예보를 필지 판단에 쓸 수 있는 항목으로 바꾸고 있습니다.");
       try {
-        const data = await api("/api/live/fire-risk");
+        const data = await api(`/api/live/fire-risk${queryString({ sigunguCode: selectedSigunguCode() })}`);
         renderLiveItems("liveView", "flame", "산불위험", data, ["analdate", "date", "region", "sigun", "sigungu", "meanavg", "maxi", "risk", "level", "value"]);
       } catch (error) {
         showApiError(error, "D6", "liveView");
+      } finally {
+        setButtonBusy("fireBtn", false);
       }
     }
 
     async function loadCompanies() {
-      renderNotice("liveView", "building-2", "법인 후보 조회 중", "지역과 작업 종류를 기준으로 상담 후보를 확인합니다.");
+      startLiveLoading("companyBtn", "building-2", "법인 후보 생성 중", "지역과 작업 성격에 맞는 수행 후보를 정리하고 있습니다.");
       try {
         const data = await api("/api/forest-companies");
-        renderLiveItems("liveView", "building-2", "산림사업법인", data, ["tradeName", "tradeNm", "companyName", "corpNm", "addr", "address", "tel", "phone", "captain", "bizType"]);
+        const filtered = filterItemsByKeyword(data, selectedAreaKeyword());
+        renderLiveItems("liveView", "building-2", filtered.length ? "산림사업법인 지역 후보" : "산림사업법인", filtered.length ? filtered : data, ["tradeName", "tradeNm", "companyName", "corpNm", "addr", "address", "tel", "phone", "captain", "bizType"]);
       } catch (error) {
         showApiError(error, "D10", "liveView");
+      } finally {
+        setButtonBusy("companyBtn", false);
       }
     }
 
     async function loadResourceStats() {
-      renderNotice("liveView", "bar-chart-3", "자원통계 조회 중", "산림자원 통계 지표를 확인합니다.");
+      startLiveLoading("statsBtn", "bar-chart-3", "자원통계 생성 중", "자원 통계 응답을 시장성과 비교 가능한 항목으로 정리하고 있습니다.");
       try {
         const data = await api("/api/resource-stats");
         renderLiveItems("liveView", "bar-chart-3", "산림자원통계", data, ["clsscNm", "classNm", "itmNm", "itemNm", "unit", "year", "value", "dataValue"]);
       } catch (error) {
         showApiError(error, "D11", "liveView");
+      } finally {
+        setButtonBusy("statsBtn", false);
       }
     }
 
+    function startLiveLoading(buttonId, iconName, title, detail) {
+      scrollToResult("liveView");
+      renderNotice("liveView", iconName, title, detail);
+      setButtonBusy(buttonId, true, "생성 중");
+    }
+
+    function scrollToResult(targetId) {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function queryString(params) {
+      const search = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") search.set(key, value);
+      });
+      const text = search.toString();
+      return text ? `?${text}` : "";
+    }
+
+    function selectedAreaKeyword() {
+      const text = state.analysis?.parcel?.adminName || state.analysis?.parcel?.address || document.getElementById("addrText").textContent || "";
+      const matches = String(text).match(/[가-힣]+(?:시|군|구)/g);
+      return matches?.length ? matches[matches.length - 1] : "";
+    }
+
+    function selectedSigunguCode() {
+      const pnu = state.analysis?.parcel?.pnu || document.getElementById("pnuText").textContent || "";
+      return /^\d{5}/.test(pnu) ? pnu.slice(0, 5) : "";
+    }
+
+    function filterItemsByKeyword(data, keyword) {
+      if (!keyword) return [];
+      return extractItems(data).filter((item) => JSON.stringify(flattenRecord(item)).includes(keyword));
+    }
+
     function showSourceFocus(ids, title) {
+      scrollToResult("liveView");
       const rows = state.sources
         .filter((source) => ids.includes(source.id))
         .map((source) => ({
@@ -2237,6 +2612,7 @@
     }
 
     function showRoadSummary() {
+      scrollToResult("liveView");
       if (!state.analysis) {
         showSourceFocus(["D4"], "임도 접근성");
         return;

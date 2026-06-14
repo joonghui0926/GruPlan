@@ -62,15 +62,20 @@ def score_features(features: FeatureSet) -> dict:
         disaster = clamp(disaster * 0.65 + features.fire_risk_index * 0.35)
 
     stand_age = features.stand_age_class or 0
-    productivity = 48 + (18 if features.economic_forest else 0) + min(features.planting_fit_count * 7, 21)
-    productivity += min(stand_age * 2.5, 16)
+    productivity = 40 + (24 if features.economic_forest else 0) + min(features.planting_fit_count * 8, 24)
+    productivity += min(stand_age * 2.2, 14)
 
-    profit = productivity * 0.56 + clamp(access) * 0.34 + (100 - disaster) * 0.10
-    carbon_base = 38 + min(stand_age * 4, 24) + min((features.area_ha or 0) * 2, 16)
+    access_value = clamp(access)
+    profit = productivity * 0.50 + access_value * 0.38 + (100 - disaster) * 0.12
+    carbon_base = 32 + min(stand_age * 3.5, 22) + min((features.area_ha or 0) * 1.6, 14)
     if features.carbon_case_similarity is not None:
         carbon_base += features.carbon_case_similarity * 22
+    if disaster > 55:
+        carbon_base -= 8
+    if access_value < 25:
+        carbon_base -= 4
     conservation = disaster * 0.58 + slope_penalty(features.slope_degree) * 1.1
-    resilience = disaster * 0.62 + (100 - clamp(access)) * 0.20 + min((features.area_ha or 0) * 2, 18)
+    resilience = disaster * 0.62 + (100 - access_value) * 0.20 + min((features.area_ha or 0) * 2, 18)
 
     scores = {
         "accessibility": round(clamp(access), 1),
