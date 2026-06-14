@@ -292,7 +292,7 @@ class PublicApiClient:
         for key_name in ("ServiceKey", "serviceKey"):
             params = {**base_params, key_name: key}
             try:
-                return await fetch_xml(url, params, source_id)
+                return await fetch_xml(url, params, source_id, {"Accept": "application/xml, text/xml, */*"})
             except PublicDataError as exc:
                 errors.append(exc)
         raise errors[-1]
