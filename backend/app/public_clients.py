@@ -258,7 +258,7 @@ class PublicApiClient:
             "service": "data",
             "request": "GetFeature",
             "data": "LP_PA_CBND_BUBUN",
-            "attrFilter": f"pnu:={pnu}",
+            "attrFilter": f"pnu:like:{pnu}",
             "crs": "EPSG:4326",
             "format": "json",
             "errorFormat": "json",
