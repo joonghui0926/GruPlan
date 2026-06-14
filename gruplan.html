@@ -1795,6 +1795,52 @@
       });
     }
 
+    function vworldFeatureAtPoint(layer, lat, lon, config) {
+      return vworldJsonp("/req/data", {
+        service: "data",
+        request: "GetFeature",
+        version: "2.0",
+        data: layer,
+        geomFilter: `POINT(${lon} ${lat})`,
+        crs: "EPSG:4326",
+        format: "json",
+        errorFormat: "json",
+        geometry: "true",
+        attribute: "true",
+        domain: config.vworldDomain || location.origin,
+        size: 10,
+        key: config.vworldKey
+      });
+    }
+
+    async function loadClientSpatialFeatures(feature) {
+      const config = await loadClientConfig();
+      const center = parcelCenter();
+      const features = { cadastral: feature };
+      if (!config?.vworldKey || !center) return features;
+      const layers = [
+        ["soil", "lt_c_fsdifrsts"],
+        ["fireRiskSpatial", "lt_c_kfdrssigugrade"],
+        ["disasterZone", "lt_c_up201"],
+        ["forestPromotionZone", "lt_c_uf602"],
+        ["forestProtectionZone", "lt_c_uf151"]
+      ];
+      const results = await Promise.allSettled(layers.map(([key, layer]) =>
+        vworldFeatureAtPoint(layer, center.lat, center.lng, config).then((data) => [key, extractFeature(data)])
+      ));
+      results.forEach((result) => {
+        if (result.status !== "fulfilled") return;
+        const [key, found] = result.value;
+        if (found) features[key] = found;
+      });
+      return features;
+    }
+
+    function parcelCenter() {
+      const center = state.parcelLayer?.getBounds?.().getCenter?.();
+      return center ? { lat: center.lat, lng: center.lng } : null;
+    }
+
     function vworldJsonp(path, params) {
       return new Promise((resolve, reject) => {
         const callbackName = `gruplanVworld${Date.now()}${Math.floor(Math.random() * 10000)}`;
@@ -1895,9 +1941,10 @@
       ];
       renderNotice("resultView", "loader", "산림자산을 분석하고 있습니다.", "필지와 겹치는 지형, 임상, 위험 정보를 확인합니다.");
       try {
+        const clientFeatures = await loadClientSpatialFeatures(state.selectedFeature);
         const payload = await api("/api/analysis", {
           method: "POST",
-          body: JSON.stringify({ pnu, geometry: state.selectedFeature.geometry })
+          body: JSON.stringify({ pnu, geometry: state.selectedFeature.geometry, clientFeatures })
         });
         state.analysis = payload;
         renderAnalysis(payload);
@@ -2365,6 +2412,10 @@
         ["추출 지표", features.derived],
         ["임상도 교차", features.standMatch],
         ["토양도 교차", features.soilMatch],
+        ["산불위험예측", features.fireRiskSpatial],
+        ["재해위험지구", features.disasterZone],
+        ["진흥권역", features.forestPromotionZone],
+        ["산림보호구역", features.forestProtectionZone],
         ["임상도", features.stand],
         ["입지토양", features.soil]
       ];

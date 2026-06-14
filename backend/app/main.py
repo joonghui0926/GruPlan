@@ -51,6 +51,7 @@ class AnalysisRequest(BaseModel):
     pnu: str | None = None
     geometry: dict | None = None
     include_live: bool = True
+    client_features: dict | None = Field(default=None, alias="clientFeatures")
 
 
 class ReportRequest(BaseModel):
@@ -250,6 +251,10 @@ async def analyze_parcel(payload: AnalysisRequest):
         raise HTTPException(status_code=404, detail="해당 필지를 찾지 못했습니다.")
 
     raw_features = _json_object(row["features"])
+    client_features = _json_object(payload.client_features)
+    if client_features:
+        await _cache_client_features(client_features)
+        raw_features = _merge_client_features(raw_features, client_features)
     stand_properties = _feature_properties(raw_features, "stand")
     soil_properties = _feature_properties(raw_features, "soil")
     stand_age_class = _extract_int_property(stand_properties, STAND_AGE_KEYS, row["stand_age_class"])
@@ -261,6 +266,8 @@ async def analyze_parcel(payload: AnalysisRequest):
         if live_fire_risk:
             raw_features["fireRisk"] = live_fire_risk
             fire_risk_index = _extract_fire_risk_index(live_fire_risk)
+    if fire_risk_index is None:
+        fire_risk_index = _extract_vworld_fire_risk_index(_feature_properties(raw_features, "fireRiskSpatial"))
     raw_features["derived"] = {
         "standAgeClass": stand_age_class,
         "standSpecies": stand_species,
@@ -592,6 +599,99 @@ def _feature_properties(features: dict, key: str) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _merge_client_features(raw_features: dict, client_features: dict) -> dict:
+    merged = dict(raw_features or {})
+    mapping = {
+        "soil": "soil",
+        "fireRiskSpatial": "fireRiskSpatial",
+        "disasterZone": "disasterZone",
+        "forestPromotionZone": "forestPromotionZone",
+        "forestProtectionZone": "forestProtectionZone",
+        "cadastral": "cadastral",
+    }
+    for client_key, target_key in mapping.items():
+        feature = client_features.get(client_key)
+        properties = _client_feature_properties(feature)
+        if properties and not _feature_properties(merged, target_key):
+            merged[target_key] = properties
+    if _client_feature_properties(client_features.get("soil")) and not merged.get("soilMatch"):
+        merged["soilMatch"] = {"matchType": "VWorld 2D 데이터", "distanceM": 0, "overlapAreaM2": None}
+    return merged
+
+
+def _client_feature_properties(feature) -> dict:
+    if not isinstance(feature, dict):
+        return {}
+    properties = feature.get("properties") if isinstance(feature.get("properties"), dict) else None
+    if properties:
+        return properties
+    return feature if any(key not in {"type", "geometry", "id"} for key in feature.keys()) else {}
+
+
+async def _cache_client_features(client_features: dict) -> None:
+    if not db.pool:
+        return
+    cadastral = client_features.get("cadastral")
+    soil = client_features.get("soil")
+    if isinstance(cadastral, dict):
+        await _cache_cadastral_feature(cadastral)
+    if isinstance(soil, dict):
+        await _cache_vector_feature("forest_soils", soil)
+
+
+async def _cache_cadastral_feature(feature: dict) -> None:
+    properties = _client_feature_properties(feature)
+    geometry = feature.get("geometry")
+    pnu = _valid_pnu(properties.get("pnu") or properties.get("PNU"))
+    if not pnu or not isinstance(geometry, dict):
+        return
+    await db.execute(
+        """
+        insert into parcels (pnu, address, admin_name, properties, geom)
+        values (
+          $1,
+          $2,
+          null,
+          $3::jsonb,
+          ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($4), 4326))
+        )
+        on conflict (pnu) do update set
+          address = coalesce(excluded.address, parcels.address),
+          properties = excluded.properties,
+          geom = excluded.geom
+        """,
+        pnu,
+        properties.get("addr") or properties.get("address") or properties.get("jibun"),
+        json.dumps(properties, ensure_ascii=False),
+        json.dumps(geometry),
+    )
+
+
+async def _cache_vector_feature(table_name: str, feature: dict) -> None:
+    if table_name not in {"forest_soils"}:
+        return
+    properties = _client_feature_properties(feature)
+    geometry = feature.get("geometry")
+    source_feature_id = str(feature.get("id") or properties.get("id") or "").strip()
+    if not source_feature_id or not isinstance(geometry, dict):
+        return
+    await db.execute(
+        f"""
+        insert into {table_name} (source_feature_id, properties, geom)
+        select
+          $1,
+          $2::jsonb,
+          ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($3), 4326))
+        where not exists (
+          select 1 from {table_name} where source_feature_id = $1
+        )
+        """,
+        source_feature_id,
+        json.dumps(properties, ensure_ascii=False),
+        json.dumps(geometry),
+    )
+
+
 def _normalize_property_key(value: str) -> str:
     return "".join(ch for ch in str(value).lower() if ch.isalnum() or "\uac00" <= ch <= "\ud7a3")
 
@@ -670,6 +770,20 @@ def _extract_fire_risk_index(data: dict) -> float | None:
     if not isinstance(item, dict):
         return None
     return _number_or_none(item.get("meanavg")) or _number_or_none(item.get("maxi"))
+
+
+def _extract_vworld_fire_risk_index(properties: dict) -> float | None:
+    if not isinstance(properties, dict):
+        return None
+    values = []
+    for key, value in properties.items():
+        key_text = str(key).lower()
+        if not key_text.startswith("value") or not key_text.endswith("h"):
+            continue
+        number = _number_or_none(value)
+        if number is not None and number > 0:
+            values.append(number)
+    return max(values) if values else None
 
 
 def _number_or_none(value) -> float | None:

@@ -4,7 +4,9 @@ from app.main import (
     _extract_int_property,
     _extract_slope_degree,
     _extract_text_property,
+    _extract_vworld_fire_risk_index,
     _first_vworld_feature,
+    _merge_client_features,
     _json_object,
     _valid_pnu,
 )
@@ -74,3 +76,16 @@ def test_extracts_first_vworld_feature():
     }
 
     assert _first_vworld_feature(data)["properties"]["pnu"] == "4886037025200660000"
+
+
+def test_merges_client_vworld_features():
+    merged = _merge_client_features({}, {"soil": {"properties": {"name": "갈색건조산림토양"}}})
+
+    assert merged["soil"]["name"] == "갈색건조산림토양"
+    assert merged["soilMatch"]["matchType"] == "VWorld 2D 데이터"
+
+
+def test_extracts_vworld_fire_risk_index():
+    properties = {"value00h": "30", "value01h": "42", "value02h": "0"}
+
+    assert _extract_vworld_fire_risk_index(properties) == 42
