@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY backend /app/backend
 COPY gruplan.html /app/gruplan.html
+COPY gruplan_logo.png /app/gruplan_logo.png
 
 ENV PYTHONPATH=/app/backend
 EXPOSE 8000
