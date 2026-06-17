@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from .data_catalog import PUBLIC_DATA_SOURCES, SOURCE_BY_ID
 from .db import Database
 from .llm import generate_plan_narrative
-from .public_clients import PublicApiClient, PublicDataError, _current_admin_code
+from .public_clients import PublicApiClient, PublicDataError, _current_admin_code, _forest_company_snapshot
 from .reports import build_plan_pdf
 from .scoring import FeatureSet, distance_score, score_features, slope_penalty
 from .settings import get_settings
@@ -148,6 +148,9 @@ FGIS_LAYER_CONFIG = {
     "economicPrivate": ("TB_FGDI_C_FS_EN200", "economic_forest_zones"),
 }
 FGIS_LIVE_SOURCE_IDS = {"D1", "D2", "D3", "D5", "D8"}
+FILE_REFERENCE_SOURCE_IDS: set[str] = set()
+LIVE_OPEN_API_SOURCE_IDS = {"D9", "D11"}
+SNAPSHOT_SOURCE_IDS = {"D10"}
 
 
 def _public_error(exc: PublicDataError) -> dict:
@@ -207,12 +210,23 @@ async def data_sources():
             if source.table_name not in loaded_tables:
                 status = "스키마 확인 필요"
             elif not row_count:
-                status = "실시간 공간 조회 연결" if source.id in FGIS_LIVE_SOURCE_IDS else "원천 데이터 0건"
+                status = "실시간 공간 조회 연결" if source.id in FGIS_LIVE_SOURCE_IDS else "원천 데이터 적재 필요"
             else:
                 status = f"공간 DB 적재 완료 · {row_count:,}건"
         if source.requires_key:
             key_ready = configured_keys["vworld"] if source.id == "D12" else configured_keys["data"]
             status = "API 키 확인 필요" if not key_ready else status
+        if source.id in FILE_REFERENCE_SOURCE_IDS:
+            status = "파일데이터 출처 연결"
+        elif source.id in LIVE_OPEN_API_SOURCE_IDS and configured_keys["data"]:
+            status = "OpenAPI 연결 가능"
+        elif source.id in SNAPSHOT_SOURCE_IDS:
+            snapshot = _forest_company_snapshot()
+            if snapshot:
+                total = int(snapshot.get("totalCount") or 0)
+                status = f"공식 스냅샷 연결 · {total:,}건"
+            elif configured_keys["data"]:
+                status = "OpenAPI 연결 가능"
         item = source.to_dict()
         item["status"] = status
         if row_count is not None:
@@ -368,6 +382,14 @@ async def forest_companies(tradeName: str | None = None, captain: str | None = N
 async def economic_forest(search: str | None = None, frstType: str | None = None):
     try:
         return await public_client.economic_forest(search=search, frst_type=frstType)
+    except PublicDataError as exc:
+        return _public_error(exc)
+
+
+@app.get("/api/carbon-offset-projects")
+async def carbon_offset_projects(page: int = 1, perPage: int = 20):
+    try:
+        return await public_client.carbon_offset_projects(page=page, per_page=perPage)
     except PublicDataError as exc:
         return _public_error(exc)
 

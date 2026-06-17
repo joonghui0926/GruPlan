@@ -296,6 +296,20 @@ class PublicApiClient:
             "D8",
         )
 
+    async def carbon_offset_projects(self, page: int = 1, per_page: int = 20) -> dict:
+        key = self.require_data_key("D9")
+        params = {
+            "page": max(1, page),
+            "perPage": min(max(1, per_page), 100),
+            "serviceKey": key,
+            "returnType": "JSON",
+        }
+        return await fetch_json(
+            "https://api.odcloud.kr/api/15125368/v1/uddi:33b54646-2140-44ee-ae6a-a4dbdccad253",
+            params,
+            "D9",
+        )
+
     async def forest_companies(
         self,
         trade_name: str | None = None,
