@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+import csv
+import io
 import json
 from functools import lru_cache
 from json import JSONDecodeError
@@ -46,6 +48,13 @@ DEFAULT_HEADERS = {
     "Connection": "close",
     "User-Agent": "Mozilla/5.0 (GruPlan AI; public-data client)",
 }
+CARBON_OFFSET_API_URL = "https://api.odcloud.kr/api/15125368/v1/uddi:33b54646-2140-44ee-ae6a-a4dbdccad253"
+CARBON_OFFSET_CSV_URL = "https://www.data.go.kr/cmm/cmm/fileDownload.do"
+CARBON_OFFSET_CSV_PARAMS = {
+    "atchFileId": "FILE_000000003079786",
+    "fileDetailSn": 1,
+    "insertDataPrcus": "N",
+}
 
 
 def _fallback_url(url: str) -> str | None:
@@ -66,6 +75,15 @@ async def _get(url: str, params: dict, headers: dict[str, str] | None = None) ->
             raise
         async with httpx.AsyncClient(timeout=18, follow_redirects=True) as client:
             return await client.get(fallback, params=params, headers=request_headers)
+
+
+def _decode_public_csv(content: bytes) -> str:
+    for encoding in ("utf-8-sig", "cp949", "euc-kr"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8", errors="replace")
 
 
 async def fetch_xml(url: str, params: dict, source_id: str, headers: dict[str, str] | None = None) -> dict:
@@ -297,18 +315,59 @@ class PublicApiClient:
         )
 
     async def carbon_offset_projects(self, page: int = 1, per_page: int = 20) -> dict:
-        key = self.require_data_key("D9")
-        params = {
-            "page": max(1, page),
-            "perPage": min(max(1, per_page), 100),
-            "serviceKey": key,
-            "returnType": "JSON",
-        }
-        return await fetch_json(
-            "https://api.odcloud.kr/api/15125368/v1/uddi:33b54646-2140-44ee-ae6a-a4dbdccad253",
-            params,
-            "D9",
-        )
+        page = max(1, page)
+        per_page = min(max(1, per_page), 100)
+        key = self.settings.data_go_kr_service_key
+        if key:
+            params = {
+                "page": page,
+                "perPage": per_page,
+                "serviceKey": key,
+                "returnType": "JSON",
+            }
+            try:
+                return await fetch_json(CARBON_OFFSET_API_URL, params, "D9")
+            except PublicDataError:
+                pass
+        try:
+            response = await _get(
+                CARBON_OFFSET_CSV_URL,
+                CARBON_OFFSET_CSV_PARAMS,
+                headers={
+                    "Accept": "text/csv, application/octet-stream, */*",
+                    "Referer": "https://www.data.go.kr/data/15125368/fileData.do?recommendDataYn=Y",
+                },
+            )
+            response.raise_for_status()
+            text = _decode_public_csv(response.content)
+            rows = list(csv.DictReader(io.StringIO(text)))
+            start = (page - 1) * per_page
+            items = rows[start : start + per_page]
+            return {
+                "response": {
+                    "header": {"resultCode": "00", "resultMsg": "OFFICIAL CSV"},
+                    "body": {
+                        "items": {"item": items},
+                        "numOfRows": len(items),
+                        "pageNo": page,
+                        "totalCount": len(rows),
+                    },
+                },
+                "data": items,
+                "page": page,
+                "perPage": per_page,
+                "currentCount": len(items),
+                "totalCount": len(rows),
+                "source": {
+                    "sourceId": "D9",
+                    "sourceName": "산림청_산림탄소상쇄사업 등록 현황",
+                    "sourceUrl": "https://www.data.go.kr/data/15125368/fileData.do",
+                },
+            }
+        except httpx.HTTPStatusError as exc:
+            raise PublicDataError(_friendly_upstream_message("D9", exc.response), 502, "D9") from exc
+        except (httpx.HTTPError, csv.Error) as exc:
+            raise PublicDataError(f"제공기관 연결 확인 필요: {exc}", 502, "D9") from exc
 
     async def forest_companies(
         self,

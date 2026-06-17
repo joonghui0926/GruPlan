@@ -148,8 +148,8 @@ FGIS_LAYER_CONFIG = {
     "economicPrivate": ("TB_FGDI_C_FS_EN200", "economic_forest_zones"),
 }
 FGIS_LIVE_SOURCE_IDS = {"D1", "D2", "D3", "D5", "D8"}
-FILE_REFERENCE_SOURCE_IDS: set[str] = set()
-LIVE_OPEN_API_SOURCE_IDS = {"D9", "D11"}
+CSV_FILE_SOURCE_IDS = {"D9"}
+LIVE_OPEN_API_SOURCE_IDS = {"D11"}
 SNAPSHOT_SOURCE_IDS = {"D10"}
 
 
@@ -216,8 +216,8 @@ async def data_sources():
         if source.requires_key:
             key_ready = configured_keys["vworld"] if source.id == "D12" else configured_keys["data"]
             status = "API 키 확인 필요" if not key_ready else status
-        if source.id in FILE_REFERENCE_SOURCE_IDS:
-            status = "파일데이터 출처 연결"
+        if source.id in CSV_FILE_SOURCE_IDS:
+            status = "공식 CSV 원본 연결"
         elif source.id in LIVE_OPEN_API_SOURCE_IDS and configured_keys["data"]:
             status = "OpenAPI 연결 가능"
         elif source.id in SNAPSHOT_SOURCE_IDS:

@@ -127,8 +127,8 @@ PUBLIC_DATA_SOURCES: tuple[PublicDataSource, ...] = (
         url="https://www.data.go.kr/data/15125368/fileData.do",
         usage="사업유형, 면적, 탄소흡수량, 사업내용으로 탄소형 경영 체크리스트 구성",
         table_name="carbon_offset_projects",
-        requires_key=True,
-        ingestion="공공데이터포털 자동 변환 OpenAPI로 조회하고 CSV 원본 적재 시 보강",
+        requires_key=False,
+        ingestion="공공데이터포털 CSV 원본을 조회하고 자동 변환 OpenAPI 활용신청 시 동기화",
     ),
     PublicDataSource(
         id="D10",
