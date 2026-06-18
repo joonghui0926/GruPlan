@@ -448,34 +448,7 @@ async def work_request_summary(region: str | None = None):
     if not db.pool:
         raise HTTPException(status_code=503, detail="DATABASE_URL이 필요합니다.")
     region_text = (region or "").strip() or None
-    overview = await db.fetchrow(
-        """
-        select
-          count(*)::int as total,
-          coalesce(sum(area_ha), 0)::float as total_area_ha,
-          avg(risk_score)::float as avg_risk,
-          avg(access_score)::float as avg_access
-        from work_requests
-        where $1::text is null
-          or admin_name ilike '%' || $1 || '%'
-          or address ilike '%' || $1 || '%'
-        """,
-        region_text,
-    )
-    type_rows = await db.fetch(
-        """
-        select work_type, count(*)::int as total, coalesce(sum(area_ha), 0)::float as area_ha,
-          avg(risk_score)::float as avg_risk, avg(access_score)::float as avg_access
-        from work_requests
-        where $1::text is null
-          or admin_name ilike '%' || $1 || '%'
-          or address ilike '%' || $1 || '%'
-        group by work_type
-        order by total desc, work_type
-        """,
-        region_text,
-    )
-    recent_rows = await db.fetch(
+    work_rows = await db.fetch(
         """
         select id, pnu, address, admin_name, area_ha, work_type, recommended_scenario,
           risk_score, access_score, status, created_at
@@ -483,50 +456,24 @@ async def work_request_summary(region: str | None = None):
         where $1::text is null
           or admin_name ilike '%' || $1 || '%'
           or address ilike '%' || $1 || '%'
-        order by coalesce(risk_score, 0) desc, coalesce(access_score, 100) asc, created_at desc
-        limit 20
+        order by created_at desc
+        limit 200
         """,
         region_text,
     )
-    risk_buckets = await db.fetch(
-        """
-        select
-          case
-            when risk_score >= 70 then '고위험'
-            when risk_score >= 45 then '관리 필요'
-            when risk_score is null then '확인 필요'
-            else '일반'
-          end as bucket,
-          count(*)::int as total
-        from work_requests
-        where $1::text is null
-          or admin_name ilike '%' || $1 || '%'
-          or address ilike '%' || $1 || '%'
-        group by bucket
-        order by total desc
-        """,
-        region_text,
-    )
+    work_items = [_work_request_row(row) for row in work_rows]
+    for item in work_items:
+        item["sourceType"] = "견적 수요"
+    candidates = await _regional_parcel_candidates(region_text)
+    combined = _dashboard_items(work_items, candidates)
     return {
         "region": region_text,
-        "overview": {
-            "total": int(overview["total"] or 0),
-            "totalAreaHa": float(overview["total_area_ha"] or 0),
-            "avgRisk": _round_or_none(overview["avg_risk"]),
-            "avgAccess": _round_or_none(overview["avg_access"]),
-        },
-        "byWorkType": [
-            {
-                "workType": row["work_type"],
-                "total": int(row["total"] or 0),
-                "areaHa": float(row["area_ha"] or 0),
-                "avgRisk": _round_or_none(row["avg_risk"]),
-                "avgAccess": _round_or_none(row["avg_access"]),
-            }
-            for row in type_rows
-        ],
-        "riskBuckets": [{"bucket": row["bucket"], "total": int(row["total"] or 0)} for row in risk_buckets],
-        "recent": [_work_request_row(row) for row in recent_rows],
+        "overview": _dashboard_overview(work_items, candidates, combined),
+        "byWorkType": _dashboard_work_type_rows(combined),
+        "riskBuckets": _dashboard_risk_buckets(combined),
+        "recent": combined[:20],
+        "workRequests": work_items[:20],
+        "publicCandidates": candidates[:20],
     }
 
 
@@ -1275,6 +1222,134 @@ def _work_request_row(row) -> dict:
         "status": row["status"],
         "createdAt": created_at.isoformat() if created_at else None,
     }
+
+
+async def _regional_parcel_candidates(region_text: str | None, limit: int = 40) -> list[dict]:
+    if not db.pool:
+        return []
+    rows = await db.fetch(
+        """
+        select pnu
+        from parcels
+        where pnu is not null
+          and ($1::text is null or admin_name ilike '%' || $1 || '%' or address ilike '%' || $1 || '%')
+        order by pnu
+        limit $2
+        """,
+        region_text,
+        limit,
+    )
+    candidates = []
+    for row in rows:
+        spatial = await _query_spatial_features(AnalysisRequest(pnu=row["pnu"], include_live=False))
+        candidate = _candidate_from_spatial_row(spatial)
+        if candidate:
+            candidates.append(candidate)
+    candidates.sort(key=lambda item: (-(item.get("riskScore") or 0), item.get("accessScore") if item.get("accessScore") is not None else 100))
+    return candidates
+
+
+def _candidate_from_spatial_row(row) -> dict | None:
+    if row is None:
+        return None
+    raw_features = _json_object(row["features"])
+    stand_properties = _feature_properties(raw_features, "stand")
+    soil_properties = _feature_properties(raw_features, "soil")
+    stand_age_class = _extract_int_property(stand_properties, STAND_AGE_KEYS, row["stand_age_class"])
+    slope_degree = _extract_slope_degree(soil_properties, row["slope_degree"])
+    features = FeatureSet(
+        area_ha=float(row["area_ha"]) if row["area_ha"] is not None else None,
+        road_distance_m=float(row["road_distance_m"]) if row["road_distance_m"] is not None else None,
+        road_density_m_per_ha=float(row["road_density_m_per_ha"]) if row["road_density_m_per_ha"] is not None else None,
+        slope_degree=slope_degree,
+        avg_landslide_grade=_number_or_none(row["avg_landslide_grade"]),
+        high_landslide_ratio=_number_or_none(row["high_landslide_ratio"]),
+        economic_forest=bool(row["economic_forest"]),
+        planting_fit_count=int(row["planting_fit_count"] or 0),
+        stand_age_class=stand_age_class,
+        stand_species=_extract_text_property(stand_properties, STAND_SPECIES_KEYS),
+    )
+    scores = score_features(features)
+    work_type = _quote_work_type(scores)
+    return {
+        "id": f"candidate-{row['pnu'] or row['address'] or 'parcel'}",
+        "pnu": row["pnu"],
+        "address": row["address"],
+        "adminName": row["admin_name"],
+        "areaHa": _round_or_none(features.area_ha, 2),
+        "workType": work_type,
+        "recommendedScenario": scores.get("recommendedScenario"),
+        "riskScore": _round_or_none(scores.get("disasterRisk")),
+        "accessScore": _round_or_none(scores.get("accessibility")),
+        "status": "공공데이터 후보",
+        "sourceType": "공공데이터 후보",
+        "createdAt": None,
+    }
+
+
+def _dashboard_items(work_items: list[dict], candidates: list[dict]) -> list[dict]:
+    seen = set()
+    combined = []
+    for item in work_items:
+        key = item.get("pnu") or item.get("id")
+        if key:
+            seen.add(key)
+        combined.append(item)
+    for item in candidates:
+        key = item.get("pnu") or item.get("id")
+        if key and key in seen:
+            continue
+        combined.append(item)
+    combined.sort(key=lambda item: (-(item.get("riskScore") or 0), item.get("accessScore") if item.get("accessScore") is not None else 100))
+    return combined
+
+
+def _dashboard_overview(work_items: list[dict], candidates: list[dict], combined: list[dict]) -> dict:
+    risk_values = [item["riskScore"] for item in combined if item.get("riskScore") is not None]
+    access_values = [item["accessScore"] for item in combined if item.get("accessScore") is not None]
+    return {
+        "total": len(combined),
+        "demandCount": len(work_items),
+        "candidateCount": len(candidates),
+        "totalAreaHa": round(sum(item.get("areaHa") or 0 for item in combined), 2),
+        "avgRisk": round(sum(risk_values) / len(risk_values), 1) if risk_values else None,
+        "avgAccess": round(sum(access_values) / len(access_values), 1) if access_values else None,
+    }
+
+
+def _dashboard_work_type_rows(items: list[dict]) -> list[dict]:
+    grouped: dict[str, list[dict]] = {}
+    for item in items:
+        grouped.setdefault(item.get("workType") or "현장 기본조사", []).append(item)
+    rows = []
+    for work_type, values in grouped.items():
+        risks = [item["riskScore"] for item in values if item.get("riskScore") is not None]
+        access = [item["accessScore"] for item in values if item.get("accessScore") is not None]
+        rows.append(
+            {
+                "workType": work_type,
+                "total": len(values),
+                "areaHa": round(sum(item.get("areaHa") or 0 for item in values), 2),
+                "avgRisk": round(sum(risks) / len(risks), 1) if risks else None,
+                "avgAccess": round(sum(access) / len(access), 1) if access else None,
+            }
+        )
+    return sorted(rows, key=lambda row: (-row["total"], row["workType"]))
+
+
+def _dashboard_risk_buckets(items: list[dict]) -> list[dict]:
+    buckets = {"고위험": 0, "관리 필요": 0, "일반": 0, "확인 필요": 0}
+    for item in items:
+        risk = item.get("riskScore")
+        if risk is None:
+            buckets["확인 필요"] += 1
+        elif risk >= 70:
+            buckets["고위험"] += 1
+        elif risk >= 45:
+            buckets["관리 필요"] += 1
+        else:
+            buckets["일반"] += 1
+    return [{"bucket": key, "total": value} for key, value in buckets.items() if value]
 
 
 def _first_vworld_point(search: dict) -> dict | None:

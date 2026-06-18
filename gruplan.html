@@ -1619,7 +1619,7 @@
           <div class="blockTitle"><i data-lucide="activity" class="icon"></i>수요·위험 지표</div>
           <div id="dashboardView" class="notice">
             <i data-lucide="layout-dashboard" class="icon"></i>
-            <span><strong>저장된 견적 수요 기준</strong><br>법인 탭에서 수요를 저장하면 지역별 면적, 위험도, 접근성, 작업 유형이 집계됩니다.</span>
+            <span><strong>지역 후보 집계</strong><br>저장된 견적 수요와 실제 필지 분석 후보를 함께 불러와 면적, 위험도, 접근성, 작업 유형을 집계합니다.</span>
           </div>
         </section>
         <section class="panelBlock">
@@ -1855,6 +1855,7 @@
       if (panelId === "civicPanel") {
         const input = document.getElementById("dashboardRegionInput");
         if (input && !input.value) input.value = selectedAreaKeyword();
+        loadRegionalDashboard();
       }
       lucide.createIcons();
     }
@@ -3302,6 +3303,8 @@
     function renderRegionalDashboard(data) {
       const overview = data.overview || {};
       const total = overview.total || 0;
+      const demandCount = overview.demandCount || 0;
+      const candidateCount = overview.candidateCount || 0;
       const typeRows = data.byWorkType || [];
       const maxType = Math.max(1, ...typeRows.map((row) => row.total || 0));
       const typeBars = typeRows.length
@@ -3312,20 +3315,25 @@
             <strong>${row.total}</strong>
           </div>
         `).join("")
-        : `<div class="notice">${icon("inbox")}<span><strong>저장된 수요가 없습니다</strong><br>법인 탭에서 견적 수요를 저장하면 지역 집계가 시작됩니다.</span></div>`;
+        : `<div class="notice">${icon("inbox")}<span><strong>불러온 후보가 없습니다</strong><br>필지 조회나 견적 수요 저장이 이루어지면 지역 집계가 시작됩니다.</span></div>`;
       const riskRows = (data.riskBuckets || []).map((row) => `
         <div class="lineItem"><small>${escapeHtml(row.bucket)}</small><span>${row.total}건</span></div>
       `).join("");
       document.getElementById("dashboardView").className = "analysisDeck";
       document.getElementById("dashboardView").innerHTML = `
         <div class="kpiGrid">
-          <div class="kpiCell"><small>견적 수요</small><strong>${total}건</strong></div>
+          <div class="kpiCell"><small>견적 수요</small><strong>${demandCount}건</strong></div>
+          <div class="kpiCell"><small>검토 후보</small><strong>${candidateCount}건</strong></div>
           <div class="kpiCell"><small>대상 면적</small><strong>${formatArea(overview.totalAreaHa)}</strong></div>
-          <div class="kpiCell"><small>평균 위험도</small><strong>${overview.avgRisk ?? "0"}</strong></div>
-          <div class="kpiCell"><small>평균 접근성</small><strong>${overview.avgAccess ?? "0"}</strong></div>
+          <div class="kpiCell"><small>평균 위험도</small><strong>${overview.avgRisk ?? "확인 필요"}</strong></div>
+        </div>
+        <div class="lineList">
+          <div class="lineItem"><small>집계 기준</small><span>저장된 견적 수요 ${demandCount}건과 공공데이터 검토 후보 ${candidateCount}건</span></div>
+          <div class="lineItem"><small>평균 접근성</small><span>${overview.avgAccess ?? "확인 필요"}</span></div>
+          <div class="lineItem"><small>총 후보</small><span>${total}건</span></div>
         </div>
         <div class="barList">${typeBars}</div>
-        <div class="lineList">${riskRows || `<div class="lineItem"><small>위험 구분</small><span>저장된 수요가 없습니다</span></div>`}</div>
+        <div class="lineList">${riskRows || `<div class="lineItem"><small>위험 구분</small><span>불러온 후보가 없습니다</span></div>`}</div>
       `;
       renderDashboardTable(data.recent || []);
       lucide.createIcons();
@@ -3339,10 +3347,10 @@
       }
       table.innerHTML = rows.map((row) => `
         <tr>
-          <td>${escapeHtml(row.workType || "")}</td>
+          <td>${escapeHtml(row.sourceType || row.workType || "")}</td>
           <td>
             <div class="sourceName">${escapeHtml(row.address || row.pnu || "필지")}</div>
-            <div class="sourceUse">면적 ${formatArea(row.areaHa)} · 위험도 ${row.riskScore ?? 0} · 접근성 ${row.accessScore ?? 0}</div>
+            <div class="sourceUse">${escapeHtml(row.workType || "현장 기본조사")} · 면적 ${formatArea(row.areaHa)} · 위험도 ${row.riskScore ?? 0} · 접근성 ${row.accessScore ?? 0}</div>
           </td>
           <td><span class="statusBadge ready">${escapeHtml(row.status || "저장")}</span></td>
         </tr>
