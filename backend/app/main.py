@@ -159,6 +159,26 @@ FGIS_LIVE_SOURCE_IDS = {"D1", "D2", "D3", "D5", "D8"}
 CSV_FILE_SOURCE_IDS = {"D9"}
 LIVE_OPEN_API_SOURCE_IDS = {"D11"}
 SNAPSHOT_SOURCE_IDS = {"D10"}
+REGION_CODE_HINTS = {
+    "춘천시": "51110",
+    "원주시": "51130",
+    "강릉시": "51150",
+    "동해시": "51170",
+    "태백시": "51190",
+    "속초시": "51210",
+    "삼척시": "51230",
+    "홍천군": "51720",
+    "횡성군": "51730",
+    "영월군": "51750",
+    "평창군": "51760",
+    "정선군": "51770",
+    "철원군": "51780",
+    "화천군": "51790",
+    "양구군": "51800",
+    "인제군": "51810",
+    "고성군": "51820",
+    "양양군": "51830",
+}
 
 
 def _public_error(exc: PublicDataError) -> dict:
@@ -470,7 +490,7 @@ async def work_request_summary(region: str | None = None):
     try:
         candidates = await _regional_parcel_candidates(region_text)
     except Exception as exc:
-        logger.warning("regional parcel candidate aggregation failed", exc_info=exc)
+        logger.warning("regional parcel candidate aggregation failed: %s", exc, exc_info=True)
         candidates = []
         warnings.append(
             {
@@ -479,14 +499,16 @@ async def work_request_summary(region: str | None = None):
             }
         )
     combined = _dashboard_items(work_items, candidates)
+    regional_data = await _regional_public_data(region_text, work_items, candidates)
     return {
         "region": region_text,
-        "overview": _dashboard_overview(work_items, candidates, combined),
+        "overview": _dashboard_overview(work_items, candidates, combined, regional_data),
         "byWorkType": _dashboard_work_type_rows(combined),
         "riskBuckets": _dashboard_risk_buckets(combined),
         "recent": combined[:20],
         "workRequests": work_items[:20],
         "publicCandidates": candidates[:20],
+        "regionalData": regional_data,
         "emptyState": _dashboard_empty_state(region_text) if not combined else None,
         "warnings": warnings,
     }
@@ -1239,6 +1261,333 @@ def _work_request_row(row) -> dict:
     }
 
 
+async def _regional_public_data(region_text: str | None, work_items: list[dict], candidates: list[dict]) -> dict:
+    region = (region_text or "").strip()
+    context = _regional_context(region, work_items, candidates)
+    if not region and not context.get("sigunguCode"):
+        return {"context": context, "sources": []}
+
+    calls: dict[str, tuple[str, object]] = {}
+    sigungu_code = context.get("sigunguCode")
+    if sigungu_code:
+        calls["fireRisk"] = ("D6", public_client.fire_risk(sigunguCode=sigungu_code))
+    if region:
+        calls["companies"] = ("D10", public_client.forest_companies(region=region))
+        calls["economicForest"] = ("D8", public_client.economic_forest(search=region))
+    calls["carbon"] = ("D9", public_client.carbon_offset_projects(page=1, per_page=1000))
+    calls["resourceStats"] = ("D11", public_client.resource_stats())
+
+    results = {}
+    if calls:
+        gathered = await asyncio.gather(
+            *[_safe_public_call(source_id, call) for source_id, call in calls.values()],
+            return_exceptions=False,
+        )
+        results = dict(zip(calls.keys(), gathered))
+
+    data = {
+        "context": context,
+        "fireRisk": _summarize_fire_risk(results.get("fireRisk")),
+        "companies": _summarize_companies(results.get("companies")),
+        "economicForest": _summarize_economic_forest(results.get("economicForest")),
+        "carbon": _summarize_carbon_projects(results.get("carbon"), region),
+        "resourceStats": _summarize_resource_stats(results.get("resourceStats")),
+    }
+    data["sources"] = _regional_source_rows(data)
+    return data
+
+
+async def _safe_public_call(source_id: str, call) -> dict:
+    try:
+        return {"ok": True, "sourceId": source_id, "data": await call}
+    except PublicDataError as exc:
+        return {"ok": False, "sourceId": exc.source_id or source_id, "message": str(exc)}
+    except Exception as exc:
+        logger.warning("regional public data call failed: %s", source_id, exc_info=True)
+        return {"ok": False, "sourceId": source_id, "message": "데이터 조회를 완료하지 못했습니다."}
+
+
+def _regional_context(region_text: str, work_items: list[dict], candidates: list[dict]) -> dict:
+    items = [*work_items, *candidates]
+    sigungu_code = ""
+    for item in items:
+        pnu = str(item.get("pnu") or "")
+        if re.fullmatch(r"\d{19}", pnu):
+            sigungu_code = _current_admin_code(pnu[:5], 5)
+            break
+    if not sigungu_code:
+        sigungu_code = _region_code_hint(region_text)
+    return {
+        "region": region_text or None,
+        "sigunguCode": sigungu_code or None,
+        "sidoCode": sigungu_code[:2] if sigungu_code else None,
+    }
+
+
+def _region_code_hint(region_text: str | None) -> str:
+    text = re.sub(r"\s+", "", str(region_text or ""))
+    if not text:
+        return ""
+    for name, code in REGION_CODE_HINTS.items():
+        if name in text or text in name:
+            return code
+    return ""
+
+
+def _public_result_data(result: dict | None) -> dict:
+    if isinstance(result, dict) and result.get("ok") and isinstance(result.get("data"), dict):
+        return result["data"]
+    return {}
+
+
+def _public_result_error(result: dict | None) -> str | None:
+    if isinstance(result, dict) and not result.get("ok"):
+        return str(result.get("message") or "조회 실패")
+    return None
+
+
+def _public_items(data: dict | None) -> list[dict]:
+    if not isinstance(data, dict):
+        return []
+    if isinstance(data.get("data"), list):
+        return [item for item in data["data"] if isinstance(item, dict)]
+    body = data.get("response", {}).get("body", {}) if isinstance(data.get("response"), dict) else {}
+    items = body.get("items", {}) if isinstance(body, dict) else {}
+    item = items.get("item") if isinstance(items, dict) else items
+    if isinstance(item, list):
+        return [row for row in item if isinstance(row, dict)]
+    if isinstance(item, dict):
+        return [item]
+    if isinstance(items, list):
+        return [row for row in items if isinstance(row, dict)]
+    return []
+
+
+def _public_total_count(data: dict | None, items: list[dict]) -> int:
+    if not isinstance(data, dict):
+        return len(items)
+    for value in (
+        data.get("totalCount"),
+        data.get("response", {}).get("body", {}).get("totalCount") if isinstance(data.get("response"), dict) else None,
+    ):
+        number = _number_or_none(value)
+        if number is not None:
+            return int(number)
+    return len(items)
+
+
+def _summarize_fire_risk(result: dict | None) -> dict:
+    error = _public_result_error(result)
+    data = _public_result_data(result)
+    items = _public_items(data)
+    item = items[0] if items else {}
+    index = _number_or_none(item.get("meanavg")) or _number_or_none(item.get("maxi"))
+    return {
+        "sourceId": "D6",
+        "status": "연결" if item else ("대기" if not error else "확인"),
+        "index": _round_or_none(index),
+        "max": _round_or_none(item.get("maxi")),
+        "today": _round_or_none(item.get("d3")),
+        "tomorrow": _round_or_none(item.get("d4")),
+        "regionName": item.get("sigun") or item.get("signguNm") or item.get("doname"),
+        "level": _risk_level(index),
+        "message": error,
+    }
+
+
+def _risk_level(value) -> str:
+    number = _number_or_none(value)
+    if number is None:
+        return "확인 중"
+    if number >= 80:
+        return "매우 높음"
+    if number >= 60:
+        return "높음"
+    if number >= 40:
+        return "관리 필요"
+    return "낮음"
+
+
+def _summarize_companies(result: dict | None) -> dict:
+    error = _public_result_error(result)
+    data = _public_result_data(result)
+    items = _public_items(data)
+    active = [item for item in items if _active_company(item)]
+    target_items = active or items
+    spec_counts: dict[str, int] = {}
+    for item in target_items:
+        spec = _clean_text(item.get("specnm") or item.get("specNm") or "업종 미기재")
+        spec_counts[spec] = spec_counts.get(spec, 0) + 1
+    top_specs = [
+        {"name": name, "count": count}
+        for name, count in sorted(spec_counts.items(), key=lambda row: (-row[1], row[0]))[:5]
+    ]
+    return {
+        "sourceId": "D10",
+        "status": "연결" if items else ("대기" if not error else "확인"),
+        "total": _public_total_count(data, items),
+        "activeCount": len(active),
+        "topSpecs": top_specs,
+        "items": [_company_item(item) for item in target_items[:6]],
+        "snapshotAt": (data.get("snapshot") or {}).get("fetchedAt") if isinstance(data.get("snapshot"), dict) else None,
+        "message": error,
+    }
+
+
+def _active_company(item: dict) -> bool:
+    useyn = _clean_text(item.get("useyn") or item.get("useYn"))
+    cancel = _clean_text(item.get("canceldate") or item.get("cancelDate") or item.get("cancelcause"))
+    if "취소" in useyn or "취소" in cancel:
+        return False
+    if "최종" in useyn:
+        return True
+    return not cancel
+
+
+def _company_item(item: dict) -> dict:
+    return {
+        "name": _clean_text(item.get("tradename") or item.get("tradeName") or item.get("companyName")),
+        "address": _clean_text(item.get("address")),
+        "field": _clean_text(item.get("specnm") or item.get("specNm")),
+        "technics": _clean_text(item.get("technics")),
+        "status": _clean_text(item.get("useyn") or item.get("useYn")),
+    }
+
+
+def _summarize_economic_forest(result: dict | None) -> dict:
+    error = _public_result_error(result)
+    data = _public_result_data(result)
+    items = _public_items(data)
+    return {
+        "sourceId": "D8",
+        "status": "연결" if items else ("대기" if not error else "확인"),
+        "total": _public_total_count(data, items),
+        "items": [_compact_public_item(item, 3) for item in items[:5]],
+        "message": error,
+    }
+
+
+def _summarize_carbon_projects(result: dict | None, region_text: str | None) -> dict:
+    error = _public_result_error(result)
+    data = _public_result_data(result)
+    items = _public_items(data)
+    keywords = _region_keywords(region_text)
+    matched = []
+    if keywords:
+        for item in items:
+            text = " ".join(_clean_text(value) for value in item.values())
+            if any(keyword and keyword in text for keyword in keywords):
+                matched.append(item)
+    target_items = matched or items[:6]
+    area_total = sum(_number_or_none(_find_public_value(item, ["면적"])) or 0 for item in matched)
+    absorption_total = sum(_number_or_none(_find_public_value(item, ["총", "흡수"])) or 0 for item in matched)
+    return {
+        "sourceId": "D9",
+        "status": "연결" if items else ("대기" if not error else "확인"),
+        "total": _public_total_count(data, items),
+        "matchedCount": len(matched),
+        "matchedAreaHa": round(area_total, 2),
+        "matchedAbsorption": round(absorption_total, 1),
+        "items": [_carbon_item(item) for item in target_items[:6]],
+        "message": error,
+    }
+
+
+def _region_keywords(region_text: str | None) -> list[str]:
+    text = re.sub(r"\s+", "", str(region_text or ""))
+    if not text:
+        return []
+    keywords = {text}
+    match = re.search(r"([가-힣]+(?:시|군|구))", text)
+    if match:
+        keywords.add(match.group(1))
+    for suffix in ("특별자치도", "광역시", "특별시", "자치도", "도", "시", "군", "구"):
+        if text.endswith(suffix) and len(text) > len(suffix):
+            keywords.add(text[: -len(suffix)])
+    return sorted(keywords, key=len, reverse=True)
+
+
+def _carbon_item(item: dict) -> dict:
+    return {
+        "projectNo": _clean_text(_find_public_value(item, ["등록", "번호"]) or _find_public_value(item, ["고유", "번호"])),
+        "type": _clean_text(_find_public_value(item, ["종류"]) or _find_public_value(item, ["유형"])),
+        "operator": _clean_text(_find_public_value(item, ["사업자"])),
+        "areaHa": _round_or_none(_find_public_value(item, ["면적"]), 2),
+        "absorption": _round_or_none(_find_public_value(item, ["총", "흡수"])),
+        "content": _clean_text(_find_public_value(item, ["내용"])),
+    }
+
+
+def _summarize_resource_stats(result: dict | None) -> dict:
+    error = _public_result_error(result)
+    data = _public_result_data(result)
+    items = _public_items(data)
+    return {
+        "sourceId": "D11",
+        "status": "연결" if items else ("대기" if not error else "확인"),
+        "total": _public_total_count(data, items),
+        "items": [_resource_stat_item(item) for item in items[:6]],
+        "message": error,
+    }
+
+
+def _resource_stat_item(item: dict) -> dict:
+    return {
+        "name": _clean_text(item.get("statNm") or item.get("statName") or item.get("statClsscNm") or item.get("clsscNm")),
+        "classId": _clean_text(item.get("statClsscId") or item.get("clsscId")),
+    }
+
+
+def _regional_source_rows(data: dict) -> list[dict]:
+    rows = []
+    labels = {
+        "fireRisk": "산불위험예보",
+        "companies": "산림사업법인",
+        "economicForest": "경제림육성단지",
+        "carbon": "탄소상쇄 등록",
+        "resourceStats": "산림자원통계",
+    }
+    for key, label in labels.items():
+        value = data.get(key) or {}
+        rows.append(
+            {
+                "id": value.get("sourceId"),
+                "name": label,
+                "status": value.get("status") or "대기",
+                "count": value.get("total") or value.get("index") or value.get("activeCount"),
+                "message": value.get("message"),
+            }
+        )
+    return rows
+
+
+def _compact_public_item(item: dict, limit: int = 4) -> dict:
+    compact = {}
+    for key, value in item.items():
+        if len(compact) >= limit:
+            break
+        text = _clean_text(value)
+        if text:
+            compact[_clean_text(key)] = text
+    return compact
+
+
+def _find_public_value(item: dict, tokens: list[str]):
+    if not isinstance(item, dict):
+        return None
+    for key, value in item.items():
+        key_text = _clean_text(key)
+        if all(token in key_text for token in tokens) and value not in (None, ""):
+            return value
+    return None
+
+
+def _clean_text(value) -> str:
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
 async def _regional_parcel_candidates(region_text: str | None, limit: int = 40) -> list[dict]:
     if not db.pool:
         return []
@@ -1364,9 +1713,20 @@ def _dashboard_items(work_items: list[dict], candidates: list[dict]) -> list[dic
     return combined
 
 
-def _dashboard_overview(work_items: list[dict], candidates: list[dict], combined: list[dict]) -> dict:
+def _dashboard_overview(
+    work_items: list[dict],
+    candidates: list[dict],
+    combined: list[dict],
+    regional_data: dict | None = None,
+) -> dict:
     risk_values = [item["riskScore"] for item in combined if item.get("riskScore") is not None]
     access_values = [item["accessScore"] for item in combined if item.get("accessScore") is not None]
+    regional_data = regional_data or {}
+    fire_risk = regional_data.get("fireRisk") or {}
+    companies = regional_data.get("companies") or {}
+    carbon = regional_data.get("carbon") or {}
+    economic_forest = regional_data.get("economicForest") or {}
+    resource_stats = regional_data.get("resourceStats") or {}
     return {
         "total": len(combined),
         "demandCount": len(work_items),
@@ -1374,6 +1734,13 @@ def _dashboard_overview(work_items: list[dict], candidates: list[dict], combined
         "totalAreaHa": round(sum(item.get("areaHa") or 0 for item in combined), 2),
         "avgRisk": round(sum(risk_values) / len(risk_values), 1) if risk_values else None,
         "avgAccess": round(sum(access_values) / len(access_values), 1) if access_values else None,
+        "fireRiskIndex": fire_risk.get("index"),
+        "activeCompanyCount": companies.get("activeCount"),
+        "companyCount": companies.get("total"),
+        "carbonProjectCount": carbon.get("total"),
+        "carbonMatchedCount": carbon.get("matchedCount"),
+        "economicForestCount": economic_forest.get("total"),
+        "resourceStatCount": resource_stats.get("total"),
     }
 
 

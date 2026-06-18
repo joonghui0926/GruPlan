@@ -1628,7 +1628,7 @@
         </section>
         <section class="panelBlock">
           <div class="blockTitle"><i data-lucide="database" class="icon"></i>확장 데이터·기술</div>
-          <div class="lineList">
+          <div class="lineList" id="dashboardDataView">
             <div class="lineItem"><small>수요 데이터</small><span>견적 요청, 작업 유형, 면적, 위험도, 접근성, 진행 상태</span></div>
             <div class="lineItem"><small>공간 데이터</small><span>임도망도 적재, 산사태위험지도, 산불위험예보, 산림공간정보 교차값</span></div>
             <div class="lineItem"><small>운영 기술</small><span>PostGIS 권역 집계, 위험 구역 열지도, 기관 권한 관리, 법인 응답 상태 추적</span></div>
@@ -3290,6 +3290,7 @@
       input.value = region;
       setButtonBusy("dashboardLoadBtn", true, "조회 중");
       renderNotice("dashboardView", "layout-dashboard", "지역 수요를 집계하고 있습니다.", region ? `${region} 기준으로 저장된 견적 요청을 조회합니다.` : "전체 저장 수요를 조회합니다.");
+      renderNotice("dashboardDataView", "database", "지역 공공데이터 조회 중", "산불위험, 산림사업법인, 탄소상쇄, 경제림, 자원통계를 함께 불러옵니다.");
       try {
         const data = await api(`/api/work-requests/summary${queryString({ region })}`);
         renderRegionalDashboard(data);
@@ -3324,11 +3325,16 @@
         title: "우선 검토 목록 대기",
         message: "지역 데이터가 쌓이면 위험도와 접근성을 기준으로 목록이 정렬됩니다.",
       });
+      renderDashboardDataView(null, {
+        title: `${regionLabel} 공공데이터 조회 대기`,
+        message: fallback,
+      });
       lucide.createIcons();
     }
 
     function renderRegionalDashboard(data) {
       const overview = data.overview || {};
+      const regional = data.regionalData || {};
       const total = overview.total || 0;
       const demandCount = overview.demandCount || 0;
       const candidateCount = overview.candidateCount || 0;
@@ -3358,11 +3364,14 @@
           <div class="kpiCell"><small>검토 후보</small><strong>${candidateCount}건</strong></div>
           <div class="kpiCell"><small>대상 면적</small><strong>${formatArea(overview.totalAreaHa)}</strong></div>
           <div class="kpiCell"><small>평균 위험도</small><strong>${overview.avgRisk ?? "확인 필요"}</strong></div>
+          <div class="kpiCell"><small>산불위험</small><strong>${formatNullableScore(overview.fireRiskIndex)}</strong></div>
+          <div class="kpiCell"><small>활성 법인</small><strong>${overview.activeCompanyCount ?? 0}개</strong></div>
         </div>
         <div class="lineList">
           <div class="lineItem"><small>집계 기준</small><span>저장된 견적 수요 ${demandCount}건과 공공데이터 검토 후보 ${candidateCount}건</span></div>
           <div class="lineItem"><small>평균 접근성</small><span>${overview.avgAccess ?? "확인 필요"}</span></div>
           <div class="lineItem"><small>총 후보</small><span>${total}건</span></div>
+          <div class="lineItem"><small>실시간 데이터</small><span>산불위험 ${formatNullableScore(overview.fireRiskIndex)}, 법인 ${overview.companyCount ?? 0}건, 탄소상쇄 ${overview.carbonProjectCount ?? 0}건</span></div>
         </div>
         <div class="barList">${typeBars}</div>
         <div class="lineList">${riskRows || `<div class="lineItem"><small>위험 구분</small><span>불러온 후보가 없습니다</span></div>`}</div>
@@ -3370,6 +3379,7 @@
         ${warningCount ? `<div class="notice">${icon("refresh-cw")}<span><strong>일부 공간 후보를 다시 계산하고 있습니다</strong><br>저장된 견적 수요와 확인된 후보는 먼저 표시합니다.</span></div>` : ""}
       `;
       renderDashboardTable(data.recent || [], emptyState);
+      renderDashboardDataView(regional, emptyState);
       lucide.createIcons();
     }
 
@@ -3389,6 +3399,44 @@
           <td><span class="statusBadge ready">${escapeHtml(row.status || "저장")}</span></td>
         </tr>
       `).join("");
+    }
+
+    function renderDashboardDataView(regional, emptyState = null) {
+      const target = document.getElementById("dashboardDataView");
+      if (!target) return;
+      target.className = "lineList";
+      if (!regional) {
+        target.innerHTML = `
+          <div class="lineItem"><small>조회 상태</small><span>${escapeHtml(emptyState?.title || "지역 공공데이터 대기")}</span></div>
+          <div class="lineItem"><small>다음 데이터</small><span>${escapeHtml(emptyState?.message || "지역을 입력하면 산불위험, 법인, 탄소상쇄, 경제림, 자원통계를 불러옵니다.")}</span></div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+      const fire = regional.fireRisk || {};
+      const companies = regional.companies || {};
+      const carbon = regional.carbon || {};
+      const economic = regional.economicForest || {};
+      const stats = regional.resourceStats || {};
+      const companyNames = (companies.items || []).slice(0, 3).map((item) => item.name).filter(Boolean).join(", ");
+      const companySpecs = (companies.topSpecs || []).slice(0, 3).map((item) => `${item.name} ${item.count}건`).join(", ");
+      const carbonItems = (carbon.items || []).slice(0, 2).map((item) => item.type || item.operator || item.projectNo).filter(Boolean).join(", ");
+      const statNames = (stats.items || []).slice(0, 3).map((item) => item.name).filter(Boolean).join(", ");
+      target.innerHTML = `
+        <div class="lineItem"><small>산불위험</small><span>${formatNullableScore(fire.index)} · ${escapeHtml(fire.level || "확인 중")} ${fire.today != null ? `· 오늘 ${fire.today}` : ""}</span></div>
+        <div class="lineItem"><small>법인 데이터</small><span>전체 ${companies.total ?? 0}건, 활성 ${companies.activeCount ?? 0}건${companySpecs ? ` · ${escapeHtml(companySpecs)}` : ""}</span></div>
+        <div class="lineItem"><small>법인 후보</small><span>${escapeHtml(companyNames || "지역 후보를 불러오는 중입니다.")}</span></div>
+        <div class="lineItem"><small>탄소상쇄</small><span>공식 등록 ${carbon.total ?? 0}건, 지역 매칭 ${carbon.matchedCount ?? 0}건${carbon.matchedAreaHa ? ` · ${carbon.matchedAreaHa}ha` : ""}</span></div>
+        <div class="lineItem"><small>탄소 사례</small><span>${escapeHtml(carbonItems || "전국 등록 사례를 비교 기준으로 사용합니다.")}</span></div>
+        <div class="lineItem"><small>경제림</small><span>${economic.total ?? 0}건 조회${economic.message ? ` · ${escapeHtml(economic.message)}` : ""}</span></div>
+        <div class="lineItem"><small>자원통계</small><span>${stats.total ?? 0}개 통계 항목${statNames ? ` · ${escapeHtml(statNames)}` : ""}</span></div>
+      `;
+      lucide.createIcons();
+    }
+
+    function formatNullableScore(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? `${Math.round(number)}` : "확인 중";
     }
 
     function startLiveLoading(buttonId, iconName, title, detail) {

@@ -316,7 +316,7 @@ class PublicApiClient:
 
     async def carbon_offset_projects(self, page: int = 1, per_page: int = 20) -> dict:
         page = max(1, page)
-        per_page = min(max(1, per_page), 100)
+        per_page = min(max(1, per_page), 1000)
         key = self.settings.data_go_kr_service_key
         if key:
             params = {
