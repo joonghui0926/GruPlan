@@ -472,30 +472,56 @@
       box-shadow: 0 0 0 5px rgba(61,127,84,.14);
     }
     .personaTabs {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0;
-      margin-top: 18px;
-      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      margin-top: 20px;
+      padding-bottom: 12px;
       border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+      scrollbar-width: none;
     }
+    .personaTabs::-webkit-scrollbar { display: none; }
     .personaTab {
-      min-height: 48px;
+      position: relative;
+      flex: 0 0 auto;
+      min-height: 42px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 7px;
+      gap: 8px;
       background: transparent;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 800;
-      border-right: 1px solid var(--line);
+      padding: 0;
+      transition: color .16s ease, opacity .16s ease;
     }
-    .personaTab:last-child { border-right: 0; }
+    .personaTab::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -13px;
+      height: 3px;
+      border-radius: 999px;
+      background: var(--pine);
+      transform: scaleX(0);
+      transform-origin: center;
+      transition: transform .18s ease;
+    }
+    .personaTab:hover {
+      color: var(--forest);
+    }
     .personaTab.isActive {
       color: var(--forest);
-      background: #edf5ea;
-      box-shadow: inset 0 -3px 0 var(--pine);
+    }
+    .personaTab.isActive::after {
+      transform: scaleX(1);
+    }
+    .personaTab .icon {
+      width: 19px;
+      height: 19px;
     }
     .personaPanel[hidden] { display: none; }
     .panelBlock {
