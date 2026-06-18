@@ -110,6 +110,23 @@ create table if not exists analysis_jobs (
   finished_at timestamptz
 );
 
+create table if not exists work_requests (
+  id uuid primary key default gen_random_uuid(),
+  pnu text,
+  address text,
+  admin_name text,
+  area_ha numeric,
+  work_type text not null,
+  recommended_scenario text,
+  risk_score numeric,
+  access_score numeric,
+  expected_tasks jsonb not null default '[]'::jsonb,
+  quote jsonb not null default '{}'::jsonb,
+  analysis jsonb not null default '{}'::jsonb,
+  status text not null default '견적 요청',
+  created_at timestamptz not null default now()
+);
+
 create index if not exists parcels_geom_gix on parcels using gist (geom);
 create index if not exists forest_stands_geom_gix on forest_stands using gist (geom);
 create index if not exists forest_soils_geom_gix on forest_soils using gist (geom);
@@ -117,3 +134,5 @@ create index if not exists planting_zones_geom_gix on planting_zones using gist 
 create index if not exists forest_roads_geom_gix on forest_roads using gist (geom);
 create index if not exists economic_forest_zones_geom_gix on economic_forest_zones using gist (geom);
 create index if not exists landslide_risk_rast_gix on landslide_risk using gist (st_convexhull(rast));
+create index if not exists work_requests_region_idx on work_requests (admin_name, created_at desc);
+create index if not exists work_requests_scores_idx on work_requests (risk_score desc, access_score asc);

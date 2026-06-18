@@ -364,6 +364,33 @@
       background: var(--ok);
       box-shadow: 0 0 0 5px rgba(61,127,84,.14);
     }
+    .personaTabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+      margin-top: 18px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .personaTab {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      border-right: 1px solid var(--line);
+    }
+    .personaTab:last-child { border-right: 0; }
+    .personaTab.isActive {
+      color: var(--forest);
+      background: #edf5ea;
+      box-shadow: inset 0 -3px 0 var(--pine);
+    }
+    .personaPanel[hidden] { display: none; }
     .panelBlock {
       padding: 24px 0;
       border-bottom: 1px solid var(--line);
@@ -608,6 +635,71 @@
       color: var(--pine);
       font-size: 14px;
       line-height: 1;
+    }
+    .lineList {
+      display: grid;
+      border-top: 1px solid var(--line);
+    }
+    .lineItem {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      gap: 12px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .lineItem:last-child { border-bottom: 0; }
+    .lineItem small {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .lineItem strong, .lineItem span {
+      color: var(--ink);
+      word-break: keep-all;
+    }
+    .quoteText {
+      width: 100%;
+      min-height: 210px;
+      padding: 0;
+      border: 0;
+      outline: 0;
+      resize: vertical;
+      background: transparent;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.75;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .barList {
+      display: grid;
+      gap: 12px;
+    }
+    .barRow {
+      display: grid;
+      grid-template-columns: 112px 1fr 44px;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .barTrack {
+      height: 8px;
+      border-radius: 999px;
+      background: #dbe4d6;
+      overflow: hidden;
+    }
+    .barFill {
+      display: block;
+      width: var(--value);
+      height: 100%;
+      background: var(--pine);
+      border-radius: inherit;
+    }
+    .tableHint {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 12px;
     }
     .sourceTable {
       width: 100%;
@@ -1423,17 +1515,24 @@
         <span id="readinessDot" class="statusDot"></span>
       </div>
 
-      <section class="panelBlock">
-        <div class="blockTitle"><i data-lucide="land-plot" class="icon"></i>선택 필지</div>
-        <div class="metaGrid">
-          <div class="metaItem"><small>PNU</small><strong id="pnuText">선택 전</strong></div>
-          <div class="metaItem"><small>좌표</small><strong id="coordText">선택 전</strong></div>
-          <div class="metaItem"><small>주소</small><strong id="addrText">확인 전</strong></div>
-          <div class="metaItem"><small>경계</small><strong id="geomText">확인 전</strong></div>
-        </div>
-      </section>
+      <div class="personaTabs" role="tablist" aria-label="서비스 대상">
+        <button class="personaTab isActive" data-panel="ownerPanel" role="tab" aria-selected="true"><i data-lucide="land-plot" class="icon"></i>산주</button>
+        <button class="personaTab" data-panel="companyPanel" role="tab" aria-selected="false"><i data-lucide="building-2" class="icon"></i>법인</button>
+        <button class="personaTab" data-panel="civicPanel" role="tab" aria-selected="false"><i data-lucide="layout-dashboard" class="icon"></i>지자체·조합</button>
+      </div>
 
-      <section class="panelBlock">
+      <div id="ownerPanel" class="personaPanel">
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="land-plot" class="icon"></i>선택 필지</div>
+          <div class="metaGrid">
+            <div class="metaItem"><small>PNU</small><strong id="pnuText">선택 전</strong></div>
+            <div class="metaItem"><small>좌표</small><strong id="coordText">선택 전</strong></div>
+            <div class="metaItem"><small>주소</small><strong id="addrText">확인 전</strong></div>
+            <div class="metaItem"><small>경계</small><strong id="geomText">확인 전</strong></div>
+          </div>
+        </section>
+
+        <section class="panelBlock">
           <div class="blockTitle"><i data-lucide="workflow" class="icon"></i>분석 실행</div>
           <div class="actionStack">
             <button id="analysisBtn" class="primaryBtn fullAction"><i data-lucide="activity" class="icon"></i>공간분석 실행</button>
@@ -1445,33 +1544,97 @@
           </div>
         </section>
 
-      <section class="panelBlock" id="resultBlock">
-        <div class="blockTitle"><i data-lucide="gauge" class="icon"></i>진단 점수</div>
-        <div id="resultView" class="notice">
-          <i data-lucide="info" class="icon"></i>
-          <span><strong>필지 선택 전</strong><br>필지를 선택하면 산림 상태와 경영 시나리오를 확인합니다.</span>
-        </div>
-      </section>
+        <section class="panelBlock" id="resultBlock">
+          <div class="blockTitle"><i data-lucide="gauge" class="icon"></i>진단 점수</div>
+          <div id="resultView" class="notice">
+            <i data-lucide="info" class="icon"></i>
+            <span><strong>필지 선택 전</strong><br>필지를 선택하면 산림 상태와 경영 시나리오를 확인합니다.</span>
+          </div>
+        </section>
 
-      <section class="panelBlock">
-        <div class="blockTitle"><i data-lucide="list-checks" class="icon"></i>올해 작업</div>
-        <div id="taskList" class="taskList">
-          <div class="notice"><i data-lucide="list-checks" class="icon"></i><span>분석 결과에 맞춰 올해 확인할 작업이 표시됩니다.</span></div>
-        </div>
-      </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="list-checks" class="icon"></i>올해 작업</div>
+          <div id="taskList" class="taskList">
+            <div class="notice"><i data-lucide="list-checks" class="icon"></i><span>분석 결과에 맞춰 올해 확인할 작업이 표시됩니다.</span></div>
+          </div>
+        </section>
 
-      <section class="panelBlock">
-        <div class="blockTitle"><i data-lucide="radar" class="icon"></i>현장 정보</div>
-        <div id="liveView" class="notice">
-          <i data-lucide="radar" class="icon"></i>
-          <span><strong>현장 데이터</strong><br>산악기상, 산불위험, 법인 후보, 자원통계를 바로 조회합니다.</span>
-        </div>
-      </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="radar" class="icon"></i>현장 정보</div>
+          <div id="liveView" class="notice">
+            <i data-lucide="radar" class="icon"></i>
+            <span><strong>현장 데이터</strong><br>산악기상, 산불위험, 법인 후보, 자원통계를 바로 조회합니다.</span>
+          </div>
+        </section>
 
-      <section class="panelBlock">
-        <div class="blockTitle"><i data-lucide="database-zap" class="icon"></i>데이터 출처</div>
-        <table class="sourceTable" id="sourceTable" aria-label="데이터 출처"></table>
-      </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="database-zap" class="icon"></i>데이터 출처</div>
+          <table class="sourceTable" id="sourceTable" aria-label="데이터 출처"></table>
+        </section>
+      </div>
+
+      <div id="companyPanel" class="personaPanel" hidden>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="file-input" class="icon"></i>견적 요청 구성</div>
+          <div class="actionStack">
+            <button id="quoteBuildBtn" class="primaryBtn fullAction"><i data-lucide="wand-sparkles" class="icon"></i>분석값으로 요청서 구성</button>
+            <button id="quoteCompanyBtn" class="quietBtn"><i data-lucide="building-2" class="icon"></i>법인 데이터</button>
+            <button id="quoteSaveBtn" class="quietBtn"><i data-lucide="send" class="icon"></i>수요 저장</button>
+            <button id="quoteCopyBtn" class="quietBtn fullAction"><i data-lucide="copy" class="icon"></i>요청서 복사</button>
+          </div>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="clipboard-list" class="icon"></i>요청 요약</div>
+          <div id="quoteSummaryView" class="notice">
+            <i data-lucide="info" class="icon"></i>
+            <span><strong>분석 결과가 필요합니다</strong><br>산주 탭에서 공간분석을 완료하면 위치, 면적, 위험도, 접근성, 작업 내용을 견적 요청으로 바꿉니다.</span>
+          </div>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="file-text" class="icon"></i>전송 문안</div>
+          <textarea id="quoteText" class="quoteText" readonly placeholder="견적 요청서가 여기에 생성됩니다."></textarea>
+          <p class="tableHint">소유자 연락처와 현장 사진은 산주의 동의 후 별도 첨부하는 구조로 둡니다.</p>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="users-round" class="icon"></i>수행 후보</div>
+          <div id="quoteCompanyView" class="notice">
+            <i data-lucide="building-2" class="icon"></i>
+            <span><strong>법인 데이터</strong><br>지역을 기준으로 산림사업법인 후보를 조회합니다.</span>
+          </div>
+        </section>
+      </div>
+
+      <div id="civicPanel" class="personaPanel" hidden>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="map" class="icon"></i>지역 대시보드</div>
+          <div class="searchDock" style="position:static;transform:none;width:100%;margin:0;padding:10px;border:1px solid var(--line);box-shadow:none">
+            <label>
+              <i data-lucide="search" class="icon"></i>
+              <input id="dashboardRegionInput" placeholder="시군구 입력">
+            </label>
+            <button id="dashboardLoadBtn" class="primaryBtn"><i data-lucide="refresh-cw" class="icon"></i>조회</button>
+          </div>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="activity" class="icon"></i>수요·위험 지표</div>
+          <div id="dashboardView" class="notice">
+            <i data-lucide="layout-dashboard" class="icon"></i>
+            <span><strong>저장된 견적 수요 기준</strong><br>법인 탭에서 수요를 저장하면 지역별 면적, 위험도, 접근성, 작업 유형이 집계됩니다.</span>
+          </div>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="list-tree" class="icon"></i>우선 검토 목록</div>
+          <table class="sourceTable" id="dashboardTable" aria-label="지역 우선 검토 목록"></table>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="database" class="icon"></i>확장 데이터·기술</div>
+          <div class="lineList">
+            <div class="lineItem"><small>수요 데이터</small><span>견적 요청, 작업 유형, 면적, 위험도, 접근성, 진행 상태</span></div>
+            <div class="lineItem"><small>공간 데이터</small><span>임도망도 적재, 산사태위험지도, 산불위험예보, 산림공간정보 교차값</span></div>
+            <div class="lineItem"><small>운영 기술</small><span>PostGIS 권역 집계, 위험 구역 열지도, 기관 권한 관리, 법인 응답 상태 추적</span></div>
+          </div>
+        </section>
+      </div>
     </aside>
   </main>
 
@@ -1578,7 +1741,8 @@
       selectedFeature: null,
       analysis: null,
       sources: [],
-      clientConfig: null
+      clientConfig: null,
+      quoteDraft: null
     };
 
     const map = L.map("map", { zoomControl: false, preferCanvas: true }).setView([36.52, 127.85], 7);
@@ -1611,6 +1775,17 @@
     document.getElementById("riskBtn").addEventListener("click", loadFireRisk);
     document.getElementById("roadBtn").addEventListener("click", showRoadSummary);
     document.getElementById("analysisCloseBtn").addEventListener("click", closeAnalysisModal);
+    document.getElementById("quoteBuildBtn").addEventListener("click", buildQuoteRequest);
+    document.getElementById("quoteCompanyBtn").addEventListener("click", loadQuoteCompanies);
+    document.getElementById("quoteCopyBtn").addEventListener("click", copyQuoteRequest);
+    document.getElementById("quoteSaveBtn").addEventListener("click", saveQuoteDemand);
+    document.getElementById("dashboardLoadBtn").addEventListener("click", loadRegionalDashboard);
+    document.getElementById("dashboardRegionInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") loadRegionalDashboard();
+    });
+    document.querySelectorAll(".personaTab").forEach((button) => {
+      button.addEventListener("click", () => switchPersona(button.dataset.panel));
+    });
     document.getElementById("analysisModal").addEventListener("click", (event) => {
       if (event.target.id === "analysisModal") closeAnalysisModal();
     });
@@ -1665,6 +1840,22 @@
       button.classList.toggle("isBusy", busy);
       if (busy) button.innerHTML = `${icon("loader")} ${busyText}`;
       else button.innerHTML = button.dataset.defaultHtml;
+      lucide.createIcons();
+    }
+
+    function switchPersona(panelId) {
+      document.querySelectorAll(".personaTab").forEach((button) => {
+        const active = button.dataset.panel === panelId;
+        button.classList.toggle("isActive", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      document.querySelectorAll(".personaPanel").forEach((panel) => {
+        panel.hidden = panel.id !== panelId;
+      });
+      if (panelId === "civicPanel") {
+        const input = document.getElementById("dashboardRegionInput");
+        if (input && !input.value) input.value = selectedAreaKeyword();
+      }
       lucide.createIcons();
     }
 
@@ -1940,6 +2131,7 @@
       }
       state.selectedFeature = null;
       state.analysis = null;
+      state.quoteDraft = null;
       document.getElementById("analysisBtn").disabled = true;
       drawParcel(feature);
       const props = feature.properties || {};
@@ -1952,6 +2144,8 @@
       const assessment = await assessForestParcel(feature);
       if (!assessment.isForest) {
         styleParcelAsNonForest();
+        state.quoteDraft = null;
+        document.getElementById("quoteText").value = "";
         renderNotice(
           "resultView",
           "circle-alert",
@@ -2058,6 +2252,7 @@
           body: JSON.stringify({ pnu, geometry: state.selectedFeature.geometry, clientFeatures })
         });
         state.analysis = payload;
+        state.quoteDraft = null;
         renderAnalysis(payload);
         setAnalysisStep(4);
         renderModalAnalysis(payload);
@@ -2923,6 +3118,237 @@
       }
     }
 
+    function buildQuoteRequest() {
+      if (!state.analysis) {
+        renderNotice("quoteSummaryView", "circle-alert", "공간분석이 먼저 필요합니다.", "산주 탭에서 필지를 분석하면 법인용 견적 요청을 구성할 수 있습니다.");
+        switchPersona("ownerPanel");
+        return;
+      }
+      const quote = quoteFromAnalysis(state.analysis);
+      state.quoteDraft = quote;
+      renderQuoteRequest(quote);
+      document.getElementById("dashboardRegionInput").value = quote.region || "";
+    }
+
+    function quoteFromAnalysis(analysis) {
+      const parcel = analysis.parcel || {};
+      const scores = analysis.scores || {};
+      const features = analysis.features || {};
+      const derived = features.derived || {};
+      const tasks = analysis.workPlan || [];
+      const workType = quoteWorkType(scores.recommendedScenario);
+      const region = selectedAreaKeyword();
+      const constraints = [
+        ["위치", parcel.address || parcel.pnu || "필지 분석값"],
+        ["면적", formatArea(parcel.areaHa)],
+        ["작업 유형", workType],
+        ["위험도", `${Math.round(scores.disasterRisk ?? 0)}점`],
+        ["접근성", `${Math.round(scores.accessibility ?? 0)}점`],
+        ["임도", derived.roadDistanceM !== null && derived.roadDistanceM !== undefined ? `${Math.round(derived.roadDistanceM)}m` : "임도망도 적재 후 거리 보정"],
+        ["경사", derived.slopeDegree !== null && derived.slopeDegree !== undefined ? `${Number(derived.slopeDegree).toFixed(1)}도` : "토양도 교차값 보정"],
+        ["수종·영급", [derived.standSpecies, derived.standAgeClass ? `${derived.standAgeClass}영급` : ""].filter(Boolean).join(" · ") || "임상도 교차값 보정"]
+      ];
+      return {
+        region,
+        parcel,
+        scores,
+        workType,
+        tasks,
+        constraints,
+        sources: analysis.sources || [],
+        createdAt: new Date().toISOString()
+      };
+    }
+
+    function quoteWorkType(scenario = "") {
+      if (scenario.includes("수익")) return "숲가꾸기·생산 기반 견적";
+      if (scenario.includes("탄소")) return "탄소상쇄 후보 조사";
+      if (scenario.includes("보전")) return "보전·복원 진단";
+      if (scenario.includes("재난")) return "재난저감 사전 점검";
+      return "현장 기본조사";
+    }
+
+    function renderQuoteRequest(quote) {
+      const scoreRows = [
+        ["위험도", Math.round(quote.scores.disasterRisk ?? 0)],
+        ["접근성", Math.round(quote.scores.accessibility ?? 0)],
+        ["수익형", Math.round(quote.scores.profit ?? 0)],
+        ["탄소형", Math.round(quote.scores.carbon ?? 0)]
+      ].map(([label, value]) => `
+        <div class="barRow">
+          <span>${label}</span>
+          <span class="barTrack"><span class="barFill" style="--value:${Math.max(0, Math.min(100, value))}%"></span></span>
+          <strong>${value}</strong>
+        </div>
+      `).join("");
+      const constraintRows = quote.constraints.map(([label, value]) => `
+        <div class="lineItem"><small>${label}</small><span>${escapeHtml(value)}</span></div>
+      `).join("");
+      const taskRows = quote.tasks.length
+        ? quote.tasks.map((task, index) => `
+          <div class="taskItem">
+            <span class="taskIcon">${index + 1}</span>
+            <div><strong>${escapeHtml(task.title || "현장 확인")}</strong><span>${escapeHtml(task.reason || "")} · ${escapeHtml(task.season || "일정 협의")}</span></div>
+          </div>
+        `).join("")
+        : `<div class="notice">${icon("list-checks")}<span><strong>작업 항목 없음</strong><br>분석 결과에 작업 항목이 생성되지 않았습니다.</span></div>`;
+      document.getElementById("quoteSummaryView").className = "analysisDeck";
+      document.getElementById("quoteSummaryView").innerHTML = `
+        <div class="scenarioHero">
+          <small>법인 견적 요청</small>
+          <strong>${icon("file-input")}${escapeHtml(quote.workType)}</strong>
+          <p>${escapeHtml(quote.parcel.address || quote.parcel.pnu || "선택 필지")}의 위치, 면적, 위험도, 접근성, 예상 작업을 정리했습니다.</p>
+        </div>
+        <div class="kpiGrid">
+          <div class="kpiCell"><small>면적</small><strong>${formatArea(quote.parcel.areaHa)}</strong></div>
+          <div class="kpiCell"><small>지역</small><strong>${escapeHtml(quote.region || "전체")}</strong></div>
+          <div class="kpiCell"><small>예상 작업</small><strong>${quote.tasks.length}건</strong></div>
+          <div class="kpiCell"><small>근거 데이터</small><strong>${quote.sources.length}개</strong></div>
+        </div>
+        <div class="barList">${scoreRows}</div>
+        <div class="lineList">${constraintRows}</div>
+        <div class="taskList">${taskRows}</div>
+      `;
+      document.getElementById("quoteText").value = quoteTextContent(quote);
+      lucide.createIcons();
+    }
+
+    function quoteTextContent(quote) {
+      const tasks = quote.tasks.length
+        ? quote.tasks.map((task, index) => `${index + 1}. ${task.title} - ${task.reason} (${task.season})`).join("\n")
+        : "1. 현장 기본조사 범위 협의";
+      const constraints = quote.constraints.map(([label, value]) => `- ${label}: ${value}`).join("\n");
+      return [
+        "[Gruplan AI 견적 요청]",
+        `작업 유형: ${quote.workType}`,
+        `대상 필지: ${quote.parcel.address || quote.parcel.pnu || "선택 필지"}`,
+        `면적: ${formatArea(quote.parcel.areaHa)}`,
+        `위험도: ${Math.round(quote.scores.disasterRisk ?? 0)}점`,
+        `접근성: ${Math.round(quote.scores.accessibility ?? 0)}점`,
+        "",
+        "현장 조건",
+        constraints,
+        "",
+        "요청 작업",
+        tasks,
+        "",
+        "요청 사항: 현장 진입 가능 지점, 작업 가능 면적, 장비 투입 조건, 예상 비용 범위를 회신해 주세요."
+      ].join("\n");
+    }
+
+    async function loadQuoteCompanies() {
+      if (!state.quoteDraft) buildQuoteRequest();
+      const quote = state.quoteDraft;
+      if (!quote) return;
+      setButtonBusy("quoteCompanyBtn", true, "조회 중");
+      renderNotice("quoteCompanyView", "building-2", "법인 데이터를 조회하고 있습니다.", `${quote.region || "전체"} 기준으로 수행 후보를 찾습니다.`);
+      try {
+        const data = await api(`/api/forest-companies${queryString({ region: quote.region })}`);
+        const filtered = filterItemsByKeyword(data, quote.region);
+        renderLiveItems("quoteCompanyView", "building-2", filtered.length ? "지역 법인 후보" : "산림사업법인", filtered.length ? filtered : data, ["tradeName", "tradename", "tradeNm", "companyName", "corpNm", "captain", "address", "specnm", "technics", "status"]);
+      } catch (error) {
+        showApiError(error, "D10", "quoteCompanyView");
+      } finally {
+        setButtonBusy("quoteCompanyBtn", false);
+      }
+    }
+
+    async function copyQuoteRequest() {
+      if (!state.quoteDraft) buildQuoteRequest();
+      const text = document.getElementById("quoteText").value;
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
+      renderNotice("quoteCompanyView", "copy-check", "요청서가 복사되었습니다.", "법인 상담, 문자, 메일에 바로 붙여 넣을 수 있습니다.");
+    }
+
+    async function saveQuoteDemand() {
+      if (!state.analysis) {
+        renderNotice("quoteSummaryView", "circle-alert", "저장할 분석 결과가 없습니다.", "공간분석을 완료한 뒤 수요를 저장할 수 있습니다.");
+        return;
+      }
+      if (!state.quoteDraft) buildQuoteRequest();
+      setButtonBusy("quoteSaveBtn", true, "저장 중");
+      try {
+        const saved = await api("/api/work-requests", {
+          method: "POST",
+          body: JSON.stringify({ analysis: state.analysis, workType: state.quoteDraft.workType, status: "견적 요청" })
+        });
+        state.quoteDraft.savedId = saved.item?.id;
+        renderNotice("quoteCompanyView", "check-circle-2", "지역 수요로 저장했습니다.", "지자체·산림조합 대시보드 집계에 반영됩니다.");
+        document.getElementById("dashboardRegionInput").value = state.quoteDraft.region || "";
+      } catch (error) {
+        showApiError(error, null, "quoteCompanyView");
+      } finally {
+        setButtonBusy("quoteSaveBtn", false);
+      }
+    }
+
+    async function loadRegionalDashboard() {
+      const input = document.getElementById("dashboardRegionInput");
+      const region = input.value.trim() || selectedAreaKeyword();
+      input.value = region;
+      setButtonBusy("dashboardLoadBtn", true, "조회 중");
+      renderNotice("dashboardView", "layout-dashboard", "지역 수요를 집계하고 있습니다.", region ? `${region} 기준으로 저장된 견적 요청을 조회합니다.` : "전체 저장 수요를 조회합니다.");
+      try {
+        const data = await api(`/api/work-requests/summary${queryString({ region })}`);
+        renderRegionalDashboard(data);
+      } catch (error) {
+        showApiError(error, null, "dashboardView");
+      } finally {
+        setButtonBusy("dashboardLoadBtn", false);
+      }
+    }
+
+    function renderRegionalDashboard(data) {
+      const overview = data.overview || {};
+      const total = overview.total || 0;
+      const typeRows = data.byWorkType || [];
+      const maxType = Math.max(1, ...typeRows.map((row) => row.total || 0));
+      const typeBars = typeRows.length
+        ? typeRows.map((row) => `
+          <div class="barRow">
+            <span>${escapeHtml(row.workType)}</span>
+            <span class="barTrack"><span class="barFill" style="--value:${Math.round((row.total || 0) / maxType * 100)}%"></span></span>
+            <strong>${row.total}</strong>
+          </div>
+        `).join("")
+        : `<div class="notice">${icon("inbox")}<span><strong>저장된 수요가 없습니다</strong><br>법인 탭에서 견적 수요를 저장하면 지역 집계가 시작됩니다.</span></div>`;
+      const riskRows = (data.riskBuckets || []).map((row) => `
+        <div class="lineItem"><small>${escapeHtml(row.bucket)}</small><span>${row.total}건</span></div>
+      `).join("");
+      document.getElementById("dashboardView").className = "analysisDeck";
+      document.getElementById("dashboardView").innerHTML = `
+        <div class="kpiGrid">
+          <div class="kpiCell"><small>견적 수요</small><strong>${total}건</strong></div>
+          <div class="kpiCell"><small>대상 면적</small><strong>${formatArea(overview.totalAreaHa)}</strong></div>
+          <div class="kpiCell"><small>평균 위험도</small><strong>${overview.avgRisk ?? "0"}</strong></div>
+          <div class="kpiCell"><small>평균 접근성</small><strong>${overview.avgAccess ?? "0"}</strong></div>
+        </div>
+        <div class="barList">${typeBars}</div>
+        <div class="lineList">${riskRows || `<div class="lineItem"><small>위험 구분</small><span>저장된 수요가 없습니다</span></div>`}</div>
+      `;
+      renderDashboardTable(data.recent || []);
+      lucide.createIcons();
+    }
+
+    function renderDashboardTable(rows) {
+      const table = document.getElementById("dashboardTable");
+      if (!rows.length) {
+        table.innerHTML = `<tr><td></td><td><div class="sourceName">우선 검토 목록 없음</div><div class="sourceUse">저장된 견적 수요가 쌓이면 위험도와 접근성을 기준으로 정렬됩니다.</div></td><td></td></tr>`;
+        return;
+      }
+      table.innerHTML = rows.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.workType || "")}</td>
+          <td>
+            <div class="sourceName">${escapeHtml(row.address || row.pnu || "필지")}</div>
+            <div class="sourceUse">면적 ${formatArea(row.areaHa)} · 위험도 ${row.riskScore ?? 0} · 접근성 ${row.accessScore ?? 0}</div>
+          </td>
+          <td><span class="statusBadge ready">${escapeHtml(row.status || "저장")}</span></td>
+        </tr>
+      `).join("");
+    }
+
     function startLiveLoading(buttonId, iconName, title, detail) {
       scrollToResult("liveView");
       renderNotice("liveView", iconName, title, detail);
@@ -3249,11 +3675,15 @@
       state.parcelLayer = null;
       state.selectedFeature = null;
       state.analysis = null;
+      state.quoteDraft = null;
       document.getElementById("analysisBtn").disabled = false;
       document.getElementById("pnuText").textContent = "선택 전";
       document.getElementById("coordText").textContent = "선택 전";
       document.getElementById("addrText").textContent = "확인 전";
       document.getElementById("geomText").textContent = "확인 전";
+      document.getElementById("quoteText").value = "";
+      renderNotice("quoteSummaryView", "info", "분석 결과가 필요합니다", "산주 탭에서 공간분석을 완료하면 위치, 면적, 위험도, 접근성, 작업 내용을 견적 요청으로 바꿉니다.");
+      renderNotice("quoteCompanyView", "building-2", "법인 데이터", "지역을 기준으로 산림사업법인 후보를 조회합니다.");
       renderNotice("resultView", "info", "선택이 초기화되었습니다.", "새 필지를 조회할 수 있습니다.");
       renderNotice("liveView", "radar", "현장 데이터", "산악기상, 산불위험, 법인 후보, 자원통계를 바로 조회합니다.");
     }

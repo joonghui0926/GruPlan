@@ -61,6 +61,12 @@ class ReportRequest(BaseModel):
     analysis: dict
 
 
+class WorkRequestPayload(BaseModel):
+    analysis: dict
+    work_type: str | None = Field(default=None, alias="workType")
+    status: str = "견적 요청"
+
+
 STAND_AGE_KEYS = [
     "age_class",
     "age",
@@ -400,6 +406,128 @@ async def resource_stats(classId: str | None = None):
         return await public_client.resource_stats(class_id=classId)
     except PublicDataError as exc:
         return _public_error(exc)
+
+
+@app.post("/api/work-requests")
+async def create_work_request(payload: WorkRequestPayload):
+    if not db.pool:
+        raise HTTPException(status_code=503, detail="DATABASE_URL이 필요합니다.")
+    analysis = payload.analysis or {}
+    parcel = analysis.get("parcel") or {}
+    scores = analysis.get("scores") or {}
+    tasks = analysis.get("workPlan") or []
+    work_type = payload.work_type or _quote_work_type(scores)
+    row = await db.fetchrow(
+        """
+        insert into work_requests (
+          pnu, address, admin_name, area_ha, work_type, recommended_scenario,
+          risk_score, access_score, expected_tasks, quote, analysis, status
+        )
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12)
+        returning id, pnu, address, admin_name, area_ha, work_type, recommended_scenario,
+          risk_score, access_score, status, created_at
+        """,
+        parcel.get("pnu"),
+        parcel.get("address"),
+        parcel.get("adminName"),
+        _number_or_none(parcel.get("areaHa")),
+        work_type,
+        scores.get("recommendedScenario"),
+        _number_or_none(scores.get("disasterRisk")),
+        _number_or_none(scores.get("accessibility")),
+        json.dumps(tasks, ensure_ascii=False),
+        json.dumps(_quote_payload(analysis, work_type), ensure_ascii=False),
+        json.dumps(analysis, ensure_ascii=False),
+        payload.status,
+    )
+    return {"item": _work_request_row(row)}
+
+
+@app.get("/api/work-requests/summary")
+async def work_request_summary(region: str | None = None):
+    if not db.pool:
+        raise HTTPException(status_code=503, detail="DATABASE_URL이 필요합니다.")
+    region_text = (region or "").strip() or None
+    overview = await db.fetchrow(
+        """
+        select
+          count(*)::int as total,
+          coalesce(sum(area_ha), 0)::float as total_area_ha,
+          avg(risk_score)::float as avg_risk,
+          avg(access_score)::float as avg_access
+        from work_requests
+        where $1::text is null
+          or admin_name ilike '%' || $1 || '%'
+          or address ilike '%' || $1 || '%'
+        """,
+        region_text,
+    )
+    type_rows = await db.fetch(
+        """
+        select work_type, count(*)::int as total, coalesce(sum(area_ha), 0)::float as area_ha,
+          avg(risk_score)::float as avg_risk, avg(access_score)::float as avg_access
+        from work_requests
+        where $1::text is null
+          or admin_name ilike '%' || $1 || '%'
+          or address ilike '%' || $1 || '%'
+        group by work_type
+        order by total desc, work_type
+        """,
+        region_text,
+    )
+    recent_rows = await db.fetch(
+        """
+        select id, pnu, address, admin_name, area_ha, work_type, recommended_scenario,
+          risk_score, access_score, status, created_at
+        from work_requests
+        where $1::text is null
+          or admin_name ilike '%' || $1 || '%'
+          or address ilike '%' || $1 || '%'
+        order by coalesce(risk_score, 0) desc, coalesce(access_score, 100) asc, created_at desc
+        limit 20
+        """,
+        region_text,
+    )
+    risk_buckets = await db.fetch(
+        """
+        select
+          case
+            when risk_score >= 70 then '고위험'
+            when risk_score >= 45 then '관리 필요'
+            when risk_score is null then '확인 필요'
+            else '일반'
+          end as bucket,
+          count(*)::int as total
+        from work_requests
+        where $1::text is null
+          or admin_name ilike '%' || $1 || '%'
+          or address ilike '%' || $1 || '%'
+        group by bucket
+        order by total desc
+        """,
+        region_text,
+    )
+    return {
+        "region": region_text,
+        "overview": {
+            "total": int(overview["total"] or 0),
+            "totalAreaHa": float(overview["total_area_ha"] or 0),
+            "avgRisk": _round_or_none(overview["avg_risk"]),
+            "avgAccess": _round_or_none(overview["avg_access"]),
+        },
+        "byWorkType": [
+            {
+                "workType": row["work_type"],
+                "total": int(row["total"] or 0),
+                "areaHa": float(row["area_ha"] or 0),
+                "avgRisk": _round_or_none(row["avg_risk"]),
+                "avgAccess": _round_or_none(row["avg_access"]),
+            }
+            for row in type_rows
+        ],
+        "riskBuckets": [{"bucket": row["bucket"], "total": int(row["total"] or 0)} for row in risk_buckets],
+        "recent": [_work_request_row(row) for row in recent_rows],
+    }
 
 
 @app.post("/api/reports/plan")
@@ -1084,6 +1212,69 @@ def _number_or_none(value) -> float | None:
     except (TypeError, ValueError):
         match = re.search(r"-?\d+(?:\.\d+)?", str(value))
         return float(match.group(0)) if match else None
+
+
+def _round_or_none(value, digits: int = 1):
+    number = _number_or_none(value)
+    return round(number, digits) if number is not None else None
+
+
+def _quote_work_type(scores: dict) -> str:
+    scenario = str(scores.get("recommendedScenario") or "")
+    if "수익" in scenario:
+        return "숲가꾸기·생산 기반 견적"
+    if "탄소" in scenario:
+        return "탄소상쇄 후보 조사"
+    if "보전" in scenario:
+        return "보전·복원 진단"
+    if "재난" in scenario:
+        return "재난저감 사전 점검"
+    return "현장 기본조사"
+
+
+def _quote_payload(analysis: dict, work_type: str) -> dict:
+    parcel = analysis.get("parcel") or {}
+    scores = analysis.get("scores") or {}
+    features = analysis.get("features") or {}
+    derived = features.get("derived") if isinstance(features.get("derived"), dict) else {}
+    return {
+        "workType": work_type,
+        "parcel": parcel,
+        "scores": {
+            "risk": scores.get("disasterRisk"),
+            "access": scores.get("accessibility"),
+            "recommendedScenario": scores.get("recommendedScenario"),
+        },
+        "site": {
+            "roadDistanceM": derived.get("roadDistanceM"),
+            "roadDensityMPerHa": derived.get("roadDensityMPerHa"),
+            "slopeDegree": derived.get("slopeDegree"),
+            "standAgeClass": derived.get("standAgeClass"),
+            "standSpecies": derived.get("standSpecies"),
+            "avgLandslideGrade": derived.get("avgLandslideGrade"),
+            "fireRiskIndex": derived.get("fireRiskIndex"),
+        },
+        "expectedTasks": analysis.get("workPlan") or [],
+    }
+
+
+def _work_request_row(row) -> dict:
+    if row is None:
+        return {}
+    created_at = row["created_at"]
+    return {
+        "id": str(row["id"]),
+        "pnu": row["pnu"],
+        "address": row["address"],
+        "adminName": row["admin_name"],
+        "areaHa": _round_or_none(row["area_ha"], 2),
+        "workType": row["work_type"],
+        "recommendedScenario": row["recommended_scenario"],
+        "riskScore": _round_or_none(row["risk_score"]),
+        "accessScore": _round_or_none(row["access_score"]),
+        "status": row["status"],
+        "createdAt": created_at.isoformat() if created_at else None,
+    }
 
 
 def _first_vworld_point(search: dict) -> dict | None:
