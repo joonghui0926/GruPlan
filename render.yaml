@@ -19,6 +19,18 @@ services:
         sync: false
       - key: VWORLD_REFERER
         value: https://gruplan-ai.onrender.com
+      - key: APP_BASE_URL
+        value: https://gruplan-ai.onrender.com
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: KAKAO_CLIENT_ID
+        sync: false
+      - key: KAKAO_CLIENT_SECRET
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL

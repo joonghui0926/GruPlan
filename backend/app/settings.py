@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     openai_model: str = Field(default="gpt-5.4-mini", alias="OPENAI_MODEL")
     fire_risk_endpoint: str | None = Field(default=None, alias="FIRE_RISK_ENDPOINT")
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
+    app_base_url: str = Field(default="https://gruplan-ai.onrender.com", alias="APP_BASE_URL")
+    session_secret: str = Field(default="change-this-session-secret", alias="SESSION_SECRET")
+    google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
+    google_client_secret: str | None = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
+    kakao_client_id: str | None = Field(default=None, alias="KAKAO_CLIENT_ID")
+    kakao_client_secret: str | None = Field(default=None, alias="KAKAO_CLIENT_SECRET")
 
     @property
     def cors_origin_list(self) -> list[str]:

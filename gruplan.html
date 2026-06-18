@@ -101,6 +101,82 @@
       white-space: nowrap;
     }
     .navPill strong { color: var(--white); font-weight: 600; }
+    .navPill.navAction {
+      border: 1px solid rgba(255,255,255,.14);
+      color: var(--white);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .navPill.navAction:hover { background: rgba(255,255,255,.15); }
+    .navPill[hidden], .navCluster[hidden] { display: none; }
+
+    .authPage {
+      min-height: 100vh;
+      padding: 112px 42px 72px;
+      background: var(--forest);
+      color: var(--white);
+    }
+    .authPage[hidden] { display: none; }
+    .authShell {
+      max-width: 1120px;
+      min-height: calc(100vh - 184px);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 72px;
+      align-items: end;
+    }
+    .authCopy h1 {
+      margin: 0;
+      max-width: 760px;
+      color: var(--white);
+      font-size: clamp(46px, 8vw, 92px);
+      line-height: .98;
+      letter-spacing: 0;
+    }
+    .authCopy p {
+      max-width: 620px;
+      margin: 26px 0 0;
+      color: rgba(255,255,255,.78);
+      font-size: 18px;
+      line-height: 1.72;
+    }
+    .authActions {
+      display: grid;
+      border-top: 1px solid rgba(255,255,255,.18);
+      border-bottom: 1px solid rgba(255,255,255,.18);
+    }
+    .authProvider {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 74px;
+      padding: 0;
+      border: 0;
+      border-bottom: 1px solid rgba(255,255,255,.18);
+      background: transparent;
+      color: var(--white);
+      text-decoration: none;
+      font-size: 19px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .authProvider:last-child { border-bottom: 0; }
+    .authProvider span {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .authProvider.isDisabled {
+      pointer-events: none;
+      color: rgba(255,255,255,.42);
+    }
+    .authHint {
+      margin-top: 18px;
+      color: rgba(255,255,255,.68);
+      font-size: 13px;
+      line-height: 1.7;
+    }
 
     .workspace {
       height: 100vh;
@@ -671,6 +747,47 @@
       line-height: 1.75;
       border-top: 1px solid var(--line);
       border-bottom: 1px solid var(--line);
+    }
+    .inlineForm {
+      display: grid;
+      gap: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .thinInput, .accountTextarea {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-size: 13px;
+      padding: 11px 0;
+    }
+    .accountTextarea {
+      min-height: 92px;
+      resize: vertical;
+      line-height: 1.7;
+    }
+    .itemActions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .miniBtn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      color: var(--forest);
+      font-weight: 800;
+      font-size: 12px;
+      padding: 7px 0;
+      cursor: pointer;
     }
     .barList {
       display: grid;
@@ -1424,6 +1541,9 @@
     }
     @media (max-width: 760px) {
       .topNav { padding: 0 16px; }
+      .navCluster { gap: 5px; }
+      .navPill { padding: 0 10px; }
+      .navPill strong { display: none; }
       .navPill span.optional { display: none; }
       .workspace { padding-top: 64px; }
       .mapStage { min-height: 720px; }
@@ -1457,6 +1577,9 @@
       .flowStep { border-right: 0; border-bottom: 1px solid var(--line); min-height: auto; }
       .flowStep:last-child { border-bottom: 0; }
       .band { padding: 62px 20px; }
+      .authPage { padding: 92px 22px 48px; }
+      .authShell { grid-template-columns: 1fr; gap: 42px; min-height: auto; }
+      .authCopy h1 { font-size: clamp(42px, 14vw, 72px); }
     }
   </style>
 </head>
@@ -1469,8 +1592,29 @@
     <div class="navCluster">
       <span class="navPill" title="서비스 상태"><i data-lucide="server" class="icon"></i><strong id="serverState">서비스 연결됨</strong></span>
       <span class="navPill" title="데이터 상태"><i data-lucide="database" class="icon"></i><span class="optional" id="dataState">데이터 확인</span></span>
+      <a class="navPill navAction" id="signupLink" href="/signup"><i data-lucide="user-plus" class="icon"></i><span>회원가입</span></a>
+      <a class="navPill navAction" id="signinLink" href="/signin"><i data-lucide="log-in" class="icon"></i><span>로그인</span></a>
+      <button class="navPill navAction" id="accountLink" hidden><i data-lucide="user-round" class="icon"></i><span id="accountName">내 업무</span></button>
+      <button class="navPill navAction" id="logoutBtn" hidden><i data-lucide="log-out" class="icon"></i><span>로그아웃</span></button>
     </div>
   </nav>
+
+  <section id="authPage" class="authPage" hidden>
+    <div class="authShell">
+      <div class="authCopy">
+        <div class="sectionLabel"><i data-lucide="shield-check" class="icon"></i> Account Workspace</div>
+        <h1>내 산의 기록과 업무를 이어서 관리합니다</h1>
+        <p>로그인하면 저장한 필지, 분석 이력, 현장 메모, 견적 요청, 문서와 공유 링크가 계정에 남습니다. 기본 지도와 분석 기능은 그대로 열려 있고, 내 업무실만 개인 계정에 연결됩니다.</p>
+      </div>
+      <div>
+        <div class="authActions">
+          <a id="googleLoginBtn" class="authProvider" href="/auth/google/start"><span><i data-lucide="chrome" class="icon"></i>Google로 계속</span><i data-lucide="arrow-right" class="icon"></i></a>
+          <a id="kakaoLoginBtn" class="authProvider" href="/auth/kakao/start"><span><i data-lucide="message-circle" class="icon"></i>Kakao로 계속</span><i data-lucide="arrow-right" class="icon"></i></a>
+        </div>
+        <p class="authHint" id="authHint">OAuth 설정이 연결된 제공자로 로그인할 수 있습니다.</p>
+      </div>
+    </div>
+  </section>
 
   <main class="workspace">
     <section class="mapStage" aria-label="필지 선택 지도">
@@ -1519,6 +1663,7 @@
         <button class="personaTab isActive" data-panel="ownerPanel" role="tab" aria-selected="true"><i data-lucide="land-plot" class="icon"></i>산주</button>
         <button class="personaTab" data-panel="companyPanel" role="tab" aria-selected="false"><i data-lucide="building-2" class="icon"></i>법인</button>
         <button class="personaTab" data-panel="civicPanel" role="tab" aria-selected="false"><i data-lucide="layout-dashboard" class="icon"></i>지자체·조합</button>
+        <button class="personaTab" data-panel="accountPanel" role="tab" aria-selected="false"><i data-lucide="briefcase-business" class="icon"></i>내 업무</button>
       </div>
 
       <div id="ownerPanel" class="personaPanel">
@@ -1635,6 +1780,48 @@
           </div>
         </section>
       </div>
+
+      <div id="accountPanel" class="personaPanel" hidden>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="layout-list" class="icon"></i>내 업무실</div>
+          <div id="accountSummaryView" class="notice">
+            <i data-lucide="log-in" class="icon"></i>
+            <span><strong>로그인이 필요합니다</strong><br>내 산 보관함과 업무 기록은 계정에 저장됩니다.</span>
+          </div>
+          <div class="actionStack" style="margin-top:14px">
+            <button id="saveParcelBtn" class="primaryBtn fullAction"><i data-lucide="bookmark-plus" class="icon"></i>현재 필지 저장</button>
+            <button id="saveAnalysisBtn" class="quietBtn fullAction"><i data-lucide="history" class="icon"></i>분석 기록 저장</button>
+            <button id="shareParcelBtn" class="quietBtn fullAction"><i data-lucide="share-2" class="icon"></i>공유 링크 생성</button>
+          </div>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="list-checks" class="icon"></i>업무 추가</div>
+          <div class="inlineForm">
+            <input id="taskTitleInput" class="thinInput" placeholder="예: 임도 진입 지점 확인">
+            <input id="taskDueInput" class="thinInput" type="date">
+            <button id="createTaskBtn" class="quietBtn fullAction"><i data-lucide="plus" class="icon"></i>업무 저장</button>
+          </div>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="notebook-pen" class="icon"></i>현장 기록</div>
+          <div class="inlineForm">
+            <textarea id="fieldNoteInput" class="accountTextarea" placeholder="현장 접근로, 경사 체감, 수종, 물길, 고사목, 작업 제한 구간을 기록"></textarea>
+            <button id="saveFieldNoteBtn" class="quietBtn fullAction"><i data-lucide="save" class="icon"></i>현장 기록 저장</button>
+          </div>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="map-pinned" class="icon"></i>내 산 보관함</div>
+          <table class="sourceTable" id="myParcelTable" aria-label="내 산 보관함"></table>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="clipboard-check" class="icon"></i>업무와 알림</div>
+          <table class="sourceTable" id="myTaskTable" aria-label="내 업무 목록"></table>
+        </section>
+        <section class="panelBlock">
+          <div class="blockTitle"><i data-lucide="folder-open" class="icon"></i>기록과 문서</div>
+          <table class="sourceTable" id="myRecordTable" aria-label="내 기록과 문서"></table>
+        </section>
+      </div>
     </aside>
   </main>
 
@@ -1742,7 +1929,10 @@
       analysis: null,
       sources: [],
       clientConfig: null,
-      quoteDraft: null
+      quoteDraft: null,
+      user: null,
+      authProviders: {},
+      account: null
     };
 
     const map = L.map("map", { zoomControl: false, preferCanvas: true }).setView([36.52, 127.85], 7);
@@ -1783,6 +1973,13 @@
     document.getElementById("dashboardRegionInput").addEventListener("keydown", (event) => {
       if (event.key === "Enter") loadRegionalDashboard();
     });
+    document.getElementById("accountLink").addEventListener("click", () => switchPersona("accountPanel"));
+    document.getElementById("logoutBtn").addEventListener("click", logoutUser);
+    document.getElementById("saveParcelBtn").addEventListener("click", saveCurrentParcel);
+    document.getElementById("saveAnalysisBtn").addEventListener("click", saveCurrentAnalysis);
+    document.getElementById("shareParcelBtn").addEventListener("click", createShareLink);
+    document.getElementById("createTaskBtn").addEventListener("click", createTask);
+    document.getElementById("saveFieldNoteBtn").addEventListener("click", saveFieldNote);
     document.querySelectorAll(".personaTab").forEach((button) => {
       button.addEventListener("click", () => switchPersona(button.dataset.panel));
     });
@@ -1857,12 +2054,19 @@
         if (input && !input.value) input.value = selectedAreaKeyword();
         loadRegionalDashboard();
       }
+      if (panelId === "accountPanel") {
+        loadAccountWorkspace();
+        if (state.user) history.replaceState(null, "", "#account");
+      } else if (location.hash === "#account") {
+        history.replaceState(null, "", location.pathname + location.search);
+      }
       lucide.createIcons();
     }
 
     async function api(path, options = {}) {
       const response = await fetch(`${apiBase}${path}`, {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        credentials: "same-origin",
         ...options
       });
       const type = response.headers.get("content-type") || "";
@@ -1876,6 +2080,362 @@
       }
       if (type.includes("application/pdf")) return response.blob();
       return response.json();
+    }
+
+    function configureAuthPage() {
+      const isAuthPage = location.pathname === "/signin" || location.pathname === "/signup";
+      document.getElementById("authPage").hidden = !isAuthPage;
+      document.querySelector(".workspace").hidden = isAuthPage;
+      document.querySelectorAll(".band, footer").forEach((element) => {
+        element.hidden = isAuthPage;
+      });
+      const params = new URLSearchParams(location.search);
+      const next = params.get("next") || "/#account";
+      document.getElementById("googleLoginBtn").href = `/auth/google/start${queryString({ next })}`;
+      document.getElementById("kakaoLoginBtn").href = `/auth/kakao/start${queryString({ next })}`;
+      if (params.get("error")) {
+        document.getElementById("authHint").textContent = "로그인을 완료하지 못했습니다. 제공자 설정과 콜백 주소를 확인해주세요.";
+      }
+    }
+
+    async function loadMe() {
+      try {
+        const data = await api("/api/me");
+        state.user = data.user || null;
+        state.authProviders = data.auth?.providers || {};
+        renderAuthNav();
+        configureProviderButtons();
+        if ((location.pathname === "/signin" || location.pathname === "/signup") && state.user) {
+          const next = new URLSearchParams(location.search).get("next") || "/#account";
+          location.href = next;
+          return;
+        }
+        if (location.hash === "#account" && state.user) switchPersona("accountPanel");
+      } catch (error) {
+        state.user = null;
+        renderAuthNav();
+      }
+    }
+
+    function renderAuthNav() {
+      const loggedIn = Boolean(state.user);
+      document.getElementById("signupLink").hidden = loggedIn;
+      document.getElementById("signinLink").hidden = loggedIn;
+      document.getElementById("accountLink").hidden = !loggedIn;
+      document.getElementById("logoutBtn").hidden = !loggedIn;
+      if (loggedIn) {
+        document.getElementById("accountName").textContent = state.user.displayName || state.user.email || "내 업무";
+      }
+      lucide.createIcons();
+    }
+
+    function configureProviderButtons() {
+      const google = document.getElementById("googleLoginBtn");
+      const kakao = document.getElementById("kakaoLoginBtn");
+      google.classList.toggle("isDisabled", !state.authProviders.google);
+      kakao.classList.toggle("isDisabled", !state.authProviders.kakao);
+      if (!state.authProviders.google && !state.authProviders.kakao) {
+        document.getElementById("authHint").textContent = "Render 환경변수에 Google 또는 Kakao OAuth 키를 넣으면 로그인 버튼이 활성화됩니다.";
+      }
+    }
+
+    async function logoutUser() {
+      await api("/auth/logout", { method: "POST", body: "{}" });
+      state.user = null;
+      state.account = null;
+      renderAuthNav();
+      if (location.pathname === "/signin" || location.pathname === "/signup") return;
+      renderAccountSignedOut();
+    }
+
+    function requireLogin(next = "/#account") {
+      if (state.user) return true;
+      location.href = `/signin${queryString({ next })}`;
+      return false;
+    }
+
+    async function loadAccountWorkspace() {
+      if (!state.user) {
+        renderAccountSignedOut();
+        return;
+      }
+      renderNotice("accountSummaryView", "loader", "내 업무실 불러오는 중", "저장된 필지, 업무, 문서와 알림을 정리합니다.");
+      try {
+        const data = await api("/api/me/dashboard");
+        state.account = data;
+        renderAccountWorkspace(data);
+      } catch (error) {
+        if (String(JSON.stringify(error)).includes("로그인")) {
+          state.user = null;
+          renderAuthNav();
+          renderAccountSignedOut();
+          return;
+        }
+        renderNotice("accountSummaryView", "circle-alert", "내 업무실을 불러오지 못했습니다", extractErrorMessage(error));
+      }
+    }
+
+    function renderAccountSignedOut() {
+      renderNotice("accountSummaryView", "log-in", "로그인이 필요합니다", "회원가입 또는 로그인 후 내 산 보관함과 업무 기록을 사용할 수 있습니다.");
+      document.getElementById("myParcelTable").innerHTML = `<tr><td></td><td><div class="sourceName">저장된 필지 없음</div><div class="sourceUse">로그인하면 분석한 필지를 계정에 저장합니다.</div></td><td></td></tr>`;
+      document.getElementById("myTaskTable").innerHTML = `<tr><td></td><td><div class="sourceName">업무 목록 없음</div><div class="sourceUse">현장 확인, 견적 요청, 문서 작업을 필지별로 관리합니다.</div></td><td></td></tr>`;
+      document.getElementById("myRecordTable").innerHTML = `<tr><td></td><td><div class="sourceName">기록 없음</div><div class="sourceUse">분석 기록, 현장 기록, 문서와 공유 링크가 여기에 쌓입니다.</div></td><td></td></tr>`;
+    }
+
+    function renderAccountWorkspace(data) {
+      const summary = data.summary || {};
+      document.getElementById("accountSummaryView").className = "analysisDeck";
+      document.getElementById("accountSummaryView").innerHTML = `
+        <div class="kpiGrid">
+          <div class="kpiCell"><small>내 산</small><strong>${summary.parcelCount || 0}필지</strong></div>
+          <div class="kpiCell"><small>분석 기록</small><strong>${summary.analysisCount || 0}건</strong></div>
+          <div class="kpiCell"><small>진행 업무</small><strong>${summary.openTaskCount || 0}건</strong></div>
+          <div class="kpiCell"><small>문서함</small><strong>${summary.documentCount || 0}건</strong></div>
+          <div class="kpiCell"><small>견적 요청</small><strong>${summary.quoteCount || 0}건</strong></div>
+          <div class="kpiCell"><small>알림</small><strong>${summary.alertCount || 0}건</strong></div>
+        </div>
+        <div class="lineList">
+          <div class="lineItem"><small>계정</small><span>${escapeHtml(data.user?.displayName || data.user?.email || "사용자")}</span></div>
+          <div class="lineItem"><small>저장 방식</small><span>필지, 분석 이력, 업무, 현장 기록, 문서와 공유 링크를 계정 단위로 관리</span></div>
+        </div>
+      `;
+      renderMyParcels(data.parcels || []);
+      renderMyTasks(data.tasks || [], data.alerts || []);
+      renderMyRecords(data.analyses || [], data.fieldNotes || [], data.documents || [], data.shares || [], data.workRequests || []);
+      lucide.createIcons();
+    }
+
+    function renderMyParcels(rows) {
+      const table = document.getElementById("myParcelTable");
+      if (!rows.length) {
+        table.innerHTML = `<tr><td></td><td><div class="sourceName">저장된 필지 없음</div><div class="sourceUse">필지를 분석한 뒤 현재 필지 저장을 누르면 보관함이 시작됩니다.</div></td><td></td></tr>`;
+        return;
+      }
+      table.innerHTML = rows.map((row) => {
+        const scores = row.lastAnalysis?.scores || {};
+        return `
+          <tr>
+            <td>${escapeHtml(row.pnu || "")}</td>
+            <td>
+              <div class="sourceName">${escapeHtml(row.address || row.pnu || "필지")}</div>
+              <div class="sourceUse">면적 ${formatArea(row.areaHa)} · 방향 ${escapeHtml(scores.recommendedScenario || "분석 대기")} · 위험 ${scores.disasterRisk ?? "확인 중"}</div>
+              <div class="itemActions"><button class="miniBtn" data-load-parcel="${escapeHtml(row.id)}">${icon("panel-top-open")}불러오기</button></div>
+            </td>
+            <td><span class="statusBadge ready">저장됨</span></td>
+          </tr>
+        `;
+      }).join("");
+      table.querySelectorAll("[data-load-parcel]").forEach((button) => {
+        button.addEventListener("click", () => loadSavedParcel(rows.find((row) => row.id === button.dataset.loadParcel)));
+      });
+    }
+
+    function loadSavedParcel(row) {
+      if (!row?.lastAnalysis?.parcel) return;
+      state.analysis = row.lastAnalysis;
+      state.quoteDraft = null;
+      const geometry = row.parcel?.geometry || row.lastAnalysis?.parcel?.geometry;
+      if (geometry) {
+        const feature = {
+          type: "Feature",
+          geometry,
+          properties: row.parcel?.properties || row.lastAnalysis?.parcel?.properties || { pnu: row.pnu }
+        };
+        state.selectedFeature = feature;
+        drawParcel(feature);
+        setParcelMeta({
+          pnu: row.pnu,
+          address: row.address || row.adminName,
+          geom: "저장 경계",
+          coord: "저장 필지"
+        });
+      }
+      switchPersona("ownerPanel");
+      renderAnalysis(row.lastAnalysis);
+      scrollToResult("resultBlock");
+    }
+
+    function renderMyTasks(tasks, alerts) {
+      const table = document.getElementById("myTaskTable");
+      const taskRows = tasks.slice(0, 8).map((row) => `
+        <tr>
+          <td>${escapeHtml(row.category || "업무")}</td>
+          <td>
+            <div class="sourceName">${escapeHtml(row.title)}</div>
+            <div class="sourceUse">${escapeHtml(row.dueDate || "기한 없음")} · ${escapeHtml(row.note || row.pnu || "필지 공통")}</div>
+            ${row.status !== "완료" ? `<div class="itemActions"><button class="miniBtn" data-task-done="${escapeHtml(row.id)}">${icon("check")}완료 처리</button></div>` : ""}
+          </td>
+          <td><span class="statusBadge ${row.status === "완료" ? "ready" : "need"}">${escapeHtml(row.status)}</span></td>
+        </tr>
+      `);
+      const alertRows = alerts.slice(0, 4).map((row) => `
+        <tr>
+          <td>${escapeHtml(row.level || "알림")}</td>
+          <td><div class="sourceName">${escapeHtml(row.title)}</div><div class="sourceUse">${escapeHtml(row.message)}</div></td>
+          <td><span class="statusBadge check">${escapeHtml(row.status)}</span></td>
+        </tr>
+      `);
+      const rows = [...taskRows, ...alertRows];
+      table.innerHTML = rows.length ? rows.join("") : `<tr><td></td><td><div class="sourceName">업무와 알림 없음</div><div class="sourceUse">필지를 저장하거나 직접 업무를 추가하면 일정이 생성됩니다.</div></td><td></td></tr>`;
+      table.querySelectorAll("[data-task-done]").forEach((button) => {
+        button.addEventListener("click", () => updateTaskStatus(button.dataset.taskDone, "완료"));
+      });
+    }
+
+    function renderMyRecords(analyses, notes, documents, shares, quotes) {
+      const table = document.getElementById("myRecordTable");
+      const rows = [
+        ...analyses.slice(0, 4).map((row) => ["분석", row.title, row.createdAt]),
+        ...notes.slice(0, 3).map((row) => ["현장", row.note, row.createdAt]),
+        ...documents.slice(0, 3).map((row) => ["문서", `${row.name} · ${row.kind}`, row.createdAt]),
+        ...quotes.slice(0, 3).map((row) => ["견적", `${row.workType} · ${row.status}`, row.createdAt]),
+        ...shares.slice(0, 2).map((row) => ["공유", row.url, row.createdAt])
+      ];
+      table.innerHTML = rows.length ? rows.map(([kind, title, date]) => `
+        <tr>
+          <td>${escapeHtml(kind)}</td>
+          <td><div class="sourceName">${escapeHtml(title || "")}</div><div class="sourceUse">${escapeHtml(formatDateTime(date))}</div></td>
+          <td></td>
+        </tr>
+      `).join("") : `<tr><td></td><td><div class="sourceName">기록 없음</div><div class="sourceUse">분석 저장, 현장 기록, PDF 생성, 견적 요청과 공유 링크가 여기에 쌓입니다.</div></td><td></td></tr>`;
+    }
+
+    function analysisForStorage() {
+      if (!state.analysis) return null;
+      const copy = JSON.parse(JSON.stringify(state.analysis));
+      if (copy.parcel && state.selectedFeature?.geometry) {
+        copy.parcel.geometry = state.selectedFeature.geometry;
+        copy.parcel.properties = state.selectedFeature.properties || {};
+      }
+      return copy;
+    }
+
+    async function saveCurrentParcel(options = {}) {
+      if (!requireLogin()) return;
+      if (!state.analysis?.parcel?.pnu) {
+        if (!options.silent) renderNotice("accountSummaryView", "info", "저장할 분석 결과가 필요합니다", "산주 탭에서 필지를 선택하고 공간분석을 실행해주세요.");
+        return;
+      }
+      if (!options.silent) setButtonBusy("saveParcelBtn", true, "저장 중");
+      try {
+        await api("/api/me/parcels", {
+          method: "POST",
+          body: JSON.stringify({ analysis: analysisForStorage() })
+        });
+        if (!options.silent) await loadAccountWorkspace();
+      } catch (error) {
+        if (!options.silent) renderNotice("accountSummaryView", "circle-alert", "필지 저장 실패", extractErrorMessage(error));
+      } finally {
+        if (!options.silent) setButtonBusy("saveParcelBtn", false);
+      }
+    }
+
+    async function saveCurrentAnalysis(options = {}) {
+      if (!requireLogin()) return;
+      if (!state.analysis?.parcel?.pnu) {
+        if (!options.silent) renderNotice("accountSummaryView", "info", "저장할 분석 기록이 필요합니다", "공간분석을 완료한 뒤 기록으로 남길 수 있습니다.");
+        return;
+      }
+      try {
+        await api("/api/me/analyses", {
+          method: "POST",
+          body: JSON.stringify({ analysis: analysisForStorage() })
+        });
+        if (!options.silent) await loadAccountWorkspace();
+      } catch (error) {
+        if (!options.silent) renderNotice("accountSummaryView", "circle-alert", "분석 기록 저장 실패", extractErrorMessage(error));
+      }
+    }
+
+    async function createTask() {
+      if (!requireLogin()) return;
+      const title = document.getElementById("taskTitleInput").value.trim();
+      if (!title) return;
+      setButtonBusy("createTaskBtn", true, "저장 중");
+      try {
+        await api("/api/me/tasks", {
+          method: "POST",
+          body: JSON.stringify({
+            title,
+            dueDate: document.getElementById("taskDueInput").value || null,
+            pnu: state.analysis?.parcel?.pnu || document.getElementById("pnuText").textContent
+          })
+        });
+        document.getElementById("taskTitleInput").value = "";
+        await loadAccountWorkspace();
+      } catch (error) {
+        renderNotice("accountSummaryView", "circle-alert", "업무 저장 실패", extractErrorMessage(error));
+      } finally {
+        setButtonBusy("createTaskBtn", false);
+      }
+    }
+
+    async function updateTaskStatus(id, status) {
+      if (!id) return;
+      try {
+        await api(`/api/me/tasks/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status })
+        });
+        await loadAccountWorkspace();
+      } catch (error) {
+        renderNotice("accountSummaryView", "circle-alert", "업무 상태 변경 실패", extractErrorMessage(error));
+      }
+    }
+
+    async function saveFieldNote() {
+      if (!requireLogin()) return;
+      const note = document.getElementById("fieldNoteInput").value.trim();
+      if (!note) return;
+      const center = parcelCenter();
+      setButtonBusy("saveFieldNoteBtn", true, "저장 중");
+      try {
+        await api("/api/me/field-notes", {
+          method: "POST",
+          body: JSON.stringify({
+            note,
+            pnu: state.analysis?.parcel?.pnu || document.getElementById("pnuText").textContent,
+            lat: center?.lat,
+            lon: center?.lng
+          })
+        });
+        document.getElementById("fieldNoteInput").value = "";
+        await loadAccountWorkspace();
+      } catch (error) {
+        renderNotice("accountSummaryView", "circle-alert", "현장 기록 저장 실패", extractErrorMessage(error));
+      } finally {
+        setButtonBusy("saveFieldNoteBtn", false);
+      }
+    }
+
+    async function createShareLink() {
+      if (!requireLogin()) return;
+      const pnu = state.analysis?.parcel?.pnu || document.getElementById("pnuText").textContent;
+      if (!/^\d{19}$/.test(String(pnu))) {
+        renderNotice("accountSummaryView", "info", "공유할 필지가 필요합니다", "분석한 필지를 먼저 저장해주세요.");
+        return;
+      }
+      setButtonBusy("shareParcelBtn", true, "생성 중");
+      try {
+        await saveCurrentParcel({ silent: true });
+        const share = await api("/api/me/shares", {
+          method: "POST",
+          body: JSON.stringify({ pnu, permission: "view" })
+        });
+        await navigator.clipboard?.writeText(share.item.url);
+        await loadAccountWorkspace();
+      } catch (error) {
+        renderNotice("accountSummaryView", "circle-alert", "공유 링크 생성 실패", extractErrorMessage(error));
+      } finally {
+        setButtonBusy("shareParcelBtn", false);
+      }
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "일시 없음";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
     }
 
     async function loadHealth() {
@@ -2257,6 +2817,7 @@
         renderAnalysis(payload);
         setAnalysisStep(4);
         renderModalAnalysis(payload);
+        if (state.user) saveCurrentAnalysis({ silent: true });
       } catch (error) {
         if (error?.missingSources) {
           renderMissingSources(error);
@@ -3049,11 +3610,34 @@
         a.click();
         URL.revokeObjectURL(url);
         renderReportProgress(100, "PDF 생성 완료", "다운로드가 시작되었습니다.");
+        if (state.user) saveGeneratedDocument("PDF 계획서", "gruplan-forest-plan.pdf");
       } catch (error) {
         showApiError(error, null, "liveView");
       } finally {
         window.clearInterval(progressTimer);
         setButtonBusy("reportBtn", false);
+      }
+    }
+
+    async function saveGeneratedDocument(kind, name) {
+      if (!state.analysis?.parcel?.pnu) return;
+      try {
+        await api("/api/me/documents", {
+          method: "POST",
+          body: JSON.stringify({
+            pnu: state.analysis.parcel.pnu,
+            name,
+            kind,
+            source: "generated",
+            payload: {
+              recommendedScenario: state.analysis.scores?.recommendedScenario,
+              score: state.analysis.scores
+            }
+          })
+        });
+        if (document.getElementById("accountPanel").hidden === false) loadAccountWorkspace();
+      } catch (error) {
+        renderNotice("accountSummaryView", "circle-alert", "문서 기록 저장 실패", extractErrorMessage(error));
       }
     }
 
@@ -3277,6 +3861,7 @@
         state.quoteDraft.savedId = saved.item?.id;
         renderNotice("quoteCompanyView", "check-circle-2", "지역 수요로 저장했습니다.", "지자체·산림조합 대시보드 집계에 반영됩니다.");
         document.getElementById("dashboardRegionInput").value = state.quoteDraft.region || "";
+        if (state.user && document.getElementById("accountPanel").hidden === false) loadAccountWorkspace();
       } catch (error) {
         showApiError(error, null, "quoteCompanyView");
       } finally {
@@ -3825,8 +4410,10 @@
       targets.forEach((target) => observer.observe(target));
     }
 
+    configureAuthPage();
     loadHealth();
     loadSources();
+    loadMe();
     initScrollReveal();
     lucide.createIcons();
   </script>

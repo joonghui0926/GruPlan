@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import math
 import re
+import secrets
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from .data_catalog import PUBLIC_DATA_SOURCES, SOURCE_BY_ID
@@ -67,6 +74,60 @@ class WorkRequestPayload(BaseModel):
     analysis: dict
     work_type: str | None = Field(default=None, alias="workType")
     status: str = "견적 요청"
+
+
+class UserParcelPayload(BaseModel):
+    analysis: dict | None = None
+    parcel: dict | None = None
+    note: str | None = None
+
+
+class AnalysisRecordPayload(BaseModel):
+    analysis: dict
+    title: str | None = None
+
+
+class WorkTaskPayload(BaseModel):
+    title: str
+    category: str = "현장 확인"
+    status: str = "대기"
+    due_date: str | None = Field(default=None, alias="dueDate")
+    note: str | None = None
+    pnu: str | None = None
+    user_parcel_id: str | None = Field(default=None, alias="userParcelId")
+
+
+class WorkTaskUpdatePayload(BaseModel):
+    title: str | None = None
+    category: str | None = None
+    status: str | None = None
+    due_date: str | None = Field(default=None, alias="dueDate")
+    note: str | None = None
+
+
+class FieldNotePayload(BaseModel):
+    note: str
+    pnu: str | None = None
+    user_parcel_id: str | None = Field(default=None, alias="userParcelId")
+    lat: float | None = None
+    lon: float | None = None
+    attachments: list[dict] = Field(default_factory=list)
+
+
+class UserDocumentPayload(BaseModel):
+    name: str
+    kind: str = "분석 문서"
+    source: str | None = None
+    payload: dict = Field(default_factory=dict)
+    pnu: str | None = None
+    user_parcel_id: str | None = Field(default=None, alias="userParcelId")
+
+
+class SharePayload(BaseModel):
+    pnu: str | None = None
+    user_parcel_id: str | None = Field(default=None, alias="userParcelId")
+    permission: str = "view"
+    expires_at: str | None = Field(default=None, alias="expiresAt")
 
 
 STAND_AGE_KEYS = [
@@ -159,6 +220,8 @@ FGIS_LIVE_SOURCE_IDS = {"D1", "D2", "D3", "D5", "D8"}
 CSV_FILE_SOURCE_IDS = {"D9"}
 LIVE_OPEN_API_SOURCE_IDS = {"D11"}
 SNAPSHOT_SOURCE_IDS = {"D10"}
+SESSION_COOKIE_NAME = "gruplan_session"
+SESSION_DAYS = 30
 REGION_CODE_HINTS = {
     "춘천시": "51110",
     "원주시": "51130",
@@ -185,6 +248,200 @@ def _public_error(exc: PublicDataError) -> dict:
     return {"error": {"message": str(exc), "sourceId": exc.source_id}}
 
 
+def _auth_providers_configured() -> dict:
+    return {
+        "google": bool(settings.google_client_id and settings.google_client_secret),
+        "kakao": bool(settings.kakao_client_id),
+    }
+
+
+def _safe_next_path(value: str | None) -> str:
+    text = str(value or "/").strip() or "/"
+    if text.startswith("http://") or text.startswith("https://") or text.startswith("//"):
+        return "/"
+    return text if text.startswith("/") else f"/{text}"
+
+
+def _b64_url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _b64_decode(text: str) -> bytes:
+    padding = "=" * (-len(text) % 4)
+    return base64.urlsafe_b64decode((text + padding).encode("ascii"))
+
+
+def _session_secret() -> bytes:
+    return settings.session_secret.encode("utf-8")
+
+
+def _signed_state(payload: dict) -> str:
+    body = _b64_url(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    signature = hmac.new(_session_secret(), body.encode("ascii"), hashlib.sha256).digest()
+    return f"{body}.{_b64_url(signature)}"
+
+
+def _verify_state(value: str, provider: str) -> dict | None:
+    try:
+        body, signature = value.split(".", 1)
+        expected = _b64_url(hmac.new(_session_secret(), body.encode("ascii"), hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected):
+            return None
+        payload = json.loads(_b64_decode(body).decode("utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if payload.get("provider") != provider:
+        return None
+    if int(time.time()) - int(payload.get("iat") or 0) > 600:
+        return None
+    return payload
+
+
+def _auth_redirect_uri(provider: str) -> str:
+    return f"{settings.app_base_url.rstrip('/')}/auth/{provider}/callback"
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def _google_profile(code: str) -> dict:
+    token = await _oauth_token(
+        "https://oauth2.googleapis.com/token",
+        {
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": _auth_redirect_uri("google"),
+        },
+    )
+    async with httpx.AsyncClient(timeout=18) as client:
+        response = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {token['access_token']}"},
+        )
+        response.raise_for_status()
+        info = response.json()
+    return {
+        "provider": "google",
+        "providerUserId": str(info.get("sub")),
+        "email": info.get("email"),
+        "displayName": info.get("name") or info.get("email"),
+        "avatarUrl": info.get("picture"),
+        "profile": info,
+    }
+
+
+async def _kakao_profile(code: str) -> dict:
+    payload = {
+        "client_id": settings.kakao_client_id,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": _auth_redirect_uri("kakao"),
+    }
+    if settings.kakao_client_secret:
+        payload["client_secret"] = settings.kakao_client_secret
+    token = await _oauth_token("https://kauth.kakao.com/oauth/token", payload)
+    async with httpx.AsyncClient(timeout=18) as client:
+        response = await client.get(
+            "https://kapi.kakao.com/v2/user/me",
+            headers={"Authorization": f"Bearer {token['access_token']}"},
+        )
+        response.raise_for_status()
+        info = response.json()
+    account = info.get("kakao_account") if isinstance(info.get("kakao_account"), dict) else {}
+    profile = account.get("profile") if isinstance(account.get("profile"), dict) else {}
+    return {
+        "provider": "kakao",
+        "providerUserId": str(info.get("id")),
+        "email": account.get("email"),
+        "displayName": profile.get("nickname") or account.get("name") or "Kakao 사용자",
+        "avatarUrl": profile.get("profile_image_url") or profile.get("thumbnail_image_url"),
+        "profile": info,
+    }
+
+
+async def _oauth_token(url: str, payload: dict) -> dict:
+    async with httpx.AsyncClient(timeout=18) as client:
+        response = await client.post(
+            url,
+            data={key: value for key, value in payload.items() if value},
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        data = response.json()
+    if "access_token" not in data:
+        raise HTTPException(status_code=502, detail="로그인 토큰을 받지 못했습니다.")
+    return data
+
+
+async def _upsert_oauth_user(profile: dict):
+    if not db.pool:
+        raise HTTPException(status_code=503, detail="DATABASE_URL이 필요합니다.")
+    return await db.fetchrow(
+        """
+        insert into app_users (provider, provider_user_id, email, display_name, avatar_url, profile)
+        values ($1, $2, $3, $4, $5, $6::jsonb)
+        on conflict (provider, provider_user_id) do update set
+          email = excluded.email,
+          display_name = excluded.display_name,
+          avatar_url = excluded.avatar_url,
+          profile = excluded.profile,
+          last_login_at = now()
+        returning id, provider, provider_user_id, email, display_name, avatar_url, created_at, last_login_at
+        """,
+        profile["provider"],
+        profile["providerUserId"],
+        profile.get("email"),
+        profile.get("displayName"),
+        profile.get("avatarUrl"),
+        json.dumps(profile.get("profile") or {}, ensure_ascii=False),
+    )
+
+
+async def _current_user(request: Request):
+    if not db.pool:
+        return None
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    row = await db.fetchrow(
+        """
+        select u.id, u.provider, u.provider_user_id, u.email, u.display_name, u.avatar_url,
+          u.created_at, u.last_login_at
+        from user_sessions s
+        join app_users u on u.id = s.user_id
+        where s.token_hash = $1
+          and s.revoked_at is null
+          and s.expires_at > now()
+        """,
+        _hash_token(token),
+    )
+    return row
+
+
+async def _require_user(request: Request):
+    user = await _current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    return user
+
+
+def _user_payload(user) -> dict:
+    if not user:
+        return {}
+    return {
+        "id": str(user["id"]),
+        "provider": user["provider"],
+        "email": user["email"],
+        "displayName": user["display_name"],
+        "avatarUrl": user["avatar_url"],
+        "createdAt": user["created_at"].isoformat() if user["created_at"] else None,
+        "lastLoginAt": user["last_login_at"].isoformat() if user["last_login_at"] else None,
+    }
+
+
 def _valid_pnu(value: str | None) -> str | None:
     text = str(value or "").strip()
     return text if re.fullmatch(r"\d{19}", text) else None
@@ -192,6 +449,20 @@ def _valid_pnu(value: str | None) -> str | None:
 
 @app.get("/")
 async def index():
+    return _html_response()
+
+
+@app.get("/signin")
+async def signin():
+    return _html_response()
+
+
+@app.get("/signup")
+async def signup():
+    return _html_response()
+
+
+def _html_response():
     html = Path(__file__).resolve().parents[2] / "gruplan.html"
     if not html.exists():
         raise HTTPException(status_code=404, detail="gruplan.html을 찾을 수 없습니다.")
@@ -218,6 +489,7 @@ async def health():
             "FIRE_RISK_ENDPOINT": bool(settings.fire_risk_endpoint),
         },
         "llm": {"model": settings.openai_model},
+        "auth": {"providers": _auth_providers_configured()},
         "sources": len(PUBLIC_DATA_SOURCES),
     }
 
@@ -269,6 +541,114 @@ async def client_config():
         "vworldKey": settings.vworld_api_key,
         "vworldDomain": settings.vworld_referer,
     }
+
+
+@app.get("/api/me")
+async def current_user(request: Request):
+    user = await _current_user(request)
+    return {
+        "user": _user_payload(user) if user else None,
+        "auth": {
+            "providers": {
+                "google": bool(settings.google_client_id and settings.google_client_secret),
+                "kakao": bool(settings.kakao_client_id),
+            }
+        },
+    }
+
+
+@app.get("/auth/{provider}/start")
+async def auth_start(provider: str, next: str | None = "/"):
+    provider = provider.lower()
+    next_path = _safe_next_path(next)
+    state = _signed_state({"provider": provider, "next": next_path, "iat": int(time.time()), "nonce": secrets.token_urlsafe(10)})
+    redirect_uri = _auth_redirect_uri(provider)
+    if provider == "google":
+        if not settings.google_client_id or not settings.google_client_secret:
+            raise HTTPException(status_code=503, detail="Google OAuth 환경변수가 필요합니다.")
+        params = {
+            "client_id": settings.google_client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+        return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}")
+    if provider == "kakao":
+        if not settings.kakao_client_id:
+            raise HTTPException(status_code=503, detail="Kakao OAuth 환경변수가 필요합니다.")
+        params = {
+            "client_id": settings.kakao_client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "state": state,
+        }
+        return RedirectResponse(f"https://kauth.kakao.com/oauth/authorize?{urlencode(params)}")
+    raise HTTPException(status_code=404, detail="지원하지 않는 로그인 방식입니다.")
+
+
+@app.get("/auth/{provider}/callback")
+async def auth_callback(provider: str, code: str | None = None, state: str | None = None, error: str | None = None):
+    provider = provider.lower()
+    if error:
+        return RedirectResponse(f"/signin?{urlencode({'error': error})}")
+    if not code or not state:
+        return RedirectResponse("/signin?error=missing_code")
+    state_payload = _verify_state(state, provider)
+    if not state_payload:
+        return RedirectResponse("/signin?error=invalid_state")
+    try:
+        if provider == "google":
+            profile = await _google_profile(code)
+        elif provider == "kakao":
+            profile = await _kakao_profile(code)
+        else:
+            raise HTTPException(status_code=404, detail="지원하지 않는 로그인 방식입니다.")
+        user = await _upsert_oauth_user(profile)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("oauth callback failed: %s", exc, exc_info=True)
+        return RedirectResponse("/signin?error=oauth_callback")
+    raw_token = secrets.token_urlsafe(36)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
+    await db.execute(
+        """
+        insert into user_sessions (token_hash, user_id, expires_at)
+        values ($1, $2, $3)
+        """,
+        _hash_token(raw_token),
+        user["id"],
+        expires_at,
+    )
+    response = RedirectResponse(_safe_next_path(state_payload.get("next") or "/"))
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        raw_token,
+        max_age=SESSION_DAYS * 24 * 60 * 60,
+        expires=SESSION_DAYS * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.app_base_url.startswith("https://"),
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/auth/logout")
+async def logout(request: Request):
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if token and db.pool:
+        await db.execute(
+            "update user_sessions set revoked_at = now() where token_hash = $1",
+            _hash_token(token),
+        )
+    response = {"ok": True}
+    return_response = Response(json.dumps(response), media_type="application/json")
+    return_response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return return_response
 
 
 @app.post("/api/parcels/lookup")
@@ -431,21 +811,23 @@ async def resource_stats(classId: str | None = None):
 
 
 @app.post("/api/work-requests")
-async def create_work_request(payload: WorkRequestPayload):
+async def create_work_request(payload: WorkRequestPayload, request: Request):
     if not db.pool:
         raise HTTPException(status_code=503, detail="DATABASE_URL이 필요합니다.")
+    user = await _current_user(request)
     analysis = payload.analysis or {}
     parcel = analysis.get("parcel") or {}
     scores = analysis.get("scores") or {}
     tasks = analysis.get("workPlan") or []
     work_type = payload.work_type or _quote_work_type(scores)
+    user_parcel = await _upsert_user_parcel(user, analysis=analysis) if user else None
     row = await db.fetchrow(
         """
         insert into work_requests (
           pnu, address, admin_name, area_ha, work_type, recommended_scenario,
-          risk_score, access_score, expected_tasks, quote, analysis, status
+          risk_score, access_score, expected_tasks, quote, analysis, status, user_id, user_parcel_id
         )
-        values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13,$14)
         returning id, pnu, address, admin_name, area_ha, work_type, recommended_scenario,
           risk_score, access_score, status, created_at
         """,
@@ -461,6 +843,8 @@ async def create_work_request(payload: WorkRequestPayload):
         json.dumps(_quote_payload(analysis, work_type), ensure_ascii=False),
         json.dumps(analysis, ensure_ascii=False),
         payload.status,
+        user["id"] if user else None,
+        user_parcel["id"] if user_parcel else None,
     )
     return {"item": _work_request_row(row)}
 
@@ -512,6 +896,227 @@ async def work_request_summary(region: str | None = None):
         "emptyState": _dashboard_empty_state(region_text) if not combined else None,
         "warnings": warnings,
     }
+
+
+@app.get("/api/me/dashboard")
+async def my_dashboard(request: Request):
+    user = await _require_user(request)
+    parcels = [_user_parcel_row(row) for row in await _user_parcel_rows(user)]
+    analyses = [_analysis_record_row(row) for row in await _analysis_record_rows(user)]
+    tasks = [_task_row(row) for row in await _task_rows(user)]
+    notes = [_field_note_row(row) for row in await _field_note_rows(user)]
+    documents = [_document_row(row) for row in await _document_rows(user)]
+    alerts = [_alert_row(row) for row in await _alert_rows(user)]
+    shares = [_share_row(row) for row in await _share_rows(user)]
+    quotes = [_work_request_row(row) for row in await _user_quote_rows(user)]
+    open_tasks = [task for task in tasks if task.get("status") not in {"완료", "보류"}]
+    return {
+        "user": _user_payload(user),
+        "summary": {
+            "parcelCount": len(parcels),
+            "analysisCount": len(analyses),
+            "openTaskCount": len(open_tasks),
+            "noteCount": len(notes),
+            "documentCount": len(documents),
+            "alertCount": len([alert for alert in alerts if alert.get("status") != "완료"]),
+            "quoteCount": len(quotes),
+        },
+        "parcels": parcels,
+        "analyses": analyses,
+        "tasks": tasks,
+        "fieldNotes": notes,
+        "documents": documents,
+        "alerts": alerts,
+        "shares": shares,
+        "workRequests": quotes,
+    }
+
+
+@app.post("/api/me/parcels")
+async def save_my_parcel(payload: UserParcelPayload, request: Request):
+    user = await _require_user(request)
+    row = await _upsert_user_parcel(user, analysis=payload.analysis, parcel=payload.parcel, note=payload.note)
+    analysis = payload.analysis or {}
+    if analysis:
+        await _insert_analysis_record(user, analysis, row["id"], _analysis_record_title(analysis))
+        await _ensure_analysis_alerts(user, row["id"], analysis)
+    return {"item": _user_parcel_row(row)}
+
+
+@app.get("/api/me/parcels")
+async def my_parcels(request: Request):
+    user = await _require_user(request)
+    return {"items": [_user_parcel_row(row) for row in await _user_parcel_rows(user)]}
+
+
+@app.post("/api/me/analyses")
+async def save_analysis_record(payload: AnalysisRecordPayload, request: Request):
+    user = await _require_user(request)
+    parcel = await _upsert_user_parcel(user, analysis=payload.analysis)
+    row = await _insert_analysis_record(user, payload.analysis, parcel["id"] if parcel else None, payload.title)
+    if parcel:
+        await _ensure_analysis_alerts(user, parcel["id"], payload.analysis)
+    return {"item": _analysis_record_row(row)}
+
+
+@app.get("/api/me/analyses")
+async def my_analyses(request: Request):
+    user = await _require_user(request)
+    return {"items": [_analysis_record_row(row) for row in await _analysis_record_rows(user)]}
+
+
+@app.post("/api/me/tasks")
+async def create_task(payload: WorkTaskPayload, request: Request):
+    user = await _require_user(request)
+    row = await db.fetchrow(
+        """
+        insert into work_tasks (user_id, user_parcel_id, pnu, title, category, status, due_date, note)
+        values ($1,$2,$3,$4,$5,$6,$7::date,$8)
+        returning id, user_parcel_id, pnu, title, category, status, due_date, note, created_at, updated_at
+        """,
+        user["id"],
+        payload.user_parcel_id,
+        _valid_pnu(payload.pnu),
+        payload.title.strip(),
+        payload.category.strip() or "현장 확인",
+        payload.status.strip() or "대기",
+        payload.due_date,
+        payload.note,
+    )
+    return {"item": _task_row(row)}
+
+
+@app.patch("/api/me/tasks/{task_id}")
+async def update_task(task_id: str, payload: WorkTaskUpdatePayload, request: Request):
+    user = await _require_user(request)
+    row = await db.fetchrow(
+        """
+        update work_tasks set
+          title = coalesce($3, title),
+          category = coalesce($4, category),
+          status = coalesce($5, status),
+          due_date = coalesce($6::date, due_date),
+          note = coalesce($7, note),
+          updated_at = now()
+        where id = $1::uuid and user_id = $2
+        returning id, user_parcel_id, pnu, title, category, status, due_date, note, created_at, updated_at
+        """,
+        task_id,
+        user["id"],
+        payload.title,
+        payload.category,
+        payload.status,
+        payload.due_date,
+        payload.note,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="업무를 찾지 못했습니다.")
+    return {"item": _task_row(row)}
+
+
+@app.get("/api/me/tasks")
+async def my_tasks(request: Request):
+    user = await _require_user(request)
+    return {"items": [_task_row(row) for row in await _task_rows(user)]}
+
+
+@app.post("/api/me/field-notes")
+async def create_field_note(payload: FieldNotePayload, request: Request):
+    user = await _require_user(request)
+    row = await db.fetchrow(
+        """
+        insert into field_notes (user_id, user_parcel_id, pnu, note, lat, lon, attachments)
+        values ($1,$2,$3,$4,$5,$6,$7::jsonb)
+        returning id, user_parcel_id, pnu, note, lat, lon, attachments, created_at
+        """,
+        user["id"],
+        payload.user_parcel_id,
+        _valid_pnu(payload.pnu),
+        payload.note.strip(),
+        payload.lat,
+        payload.lon,
+        json.dumps(payload.attachments, ensure_ascii=False),
+    )
+    return {"item": _field_note_row(row)}
+
+
+@app.get("/api/me/field-notes")
+async def my_field_notes(request: Request):
+    user = await _require_user(request)
+    return {"items": [_field_note_row(row) for row in await _field_note_rows(user)]}
+
+
+@app.post("/api/me/documents")
+async def create_document(payload: UserDocumentPayload, request: Request):
+    user = await _require_user(request)
+    row = await db.fetchrow(
+        """
+        insert into user_documents (user_id, user_parcel_id, pnu, name, kind, source, payload)
+        values ($1,$2,$3,$4,$5,$6,$7::jsonb)
+        returning id, user_parcel_id, pnu, name, kind, source, payload, created_at
+        """,
+        user["id"],
+        payload.user_parcel_id,
+        _valid_pnu(payload.pnu),
+        payload.name.strip(),
+        payload.kind.strip() or "분석 문서",
+        payload.source,
+        json.dumps(payload.payload, ensure_ascii=False),
+    )
+    return {"item": _document_row(row)}
+
+
+@app.get("/api/me/documents")
+async def my_documents(request: Request):
+    user = await _require_user(request)
+    return {"items": [_document_row(row) for row in await _document_rows(user)]}
+
+
+@app.post("/api/me/shares")
+async def create_share(payload: SharePayload, request: Request):
+    user = await _require_user(request)
+    user_parcel_id = payload.user_parcel_id
+    if not user_parcel_id and payload.pnu:
+        row = await db.fetchrow(
+            "select id from user_parcels where user_id = $1 and pnu = $2",
+            user["id"],
+            _valid_pnu(payload.pnu),
+        )
+        user_parcel_id = str(row["id"]) if row else None
+    if not user_parcel_id:
+        raise HTTPException(status_code=400, detail="공유할 필지를 먼저 저장해주세요.")
+    token = secrets.token_urlsafe(24)
+    row = await db.fetchrow(
+        """
+        insert into user_shares (user_id, user_parcel_id, share_token, permission, expires_at)
+        values ($1,$2::uuid,$3,$4,$5::timestamptz)
+        returning id, user_parcel_id, share_token, permission, created_at, expires_at
+        """,
+        user["id"],
+        user_parcel_id,
+        token,
+        payload.permission,
+        payload.expires_at,
+    )
+    return {"item": _share_row(row)}
+
+
+@app.get("/api/share/{token}")
+async def read_share(token: str):
+    row = await db.fetchrow(
+        """
+        select s.share_token, s.permission, s.created_at, s.expires_at,
+          p.pnu, p.address, p.admin_name, p.area_ha, p.parcel, p.last_analysis
+        from user_shares s
+        join user_parcels p on p.id = s.user_parcel_id
+        where s.share_token = $1
+          and (s.expires_at is null or s.expires_at > now())
+        """,
+        token,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="공유 링크를 찾지 못했습니다.")
+    return {"item": _shared_parcel_row(row)}
 
 
 @app.post("/api/reports/plan")
@@ -1258,6 +1863,316 @@ def _work_request_row(row) -> dict:
         "accessScore": _round_or_none(row["access_score"]),
         "status": row["status"],
         "createdAt": created_at.isoformat() if created_at else None,
+    }
+
+
+async def _upsert_user_parcel(user, analysis: dict | None = None, parcel: dict | None = None, note: str | None = None):
+    if not user:
+        return None
+    analysis = analysis or {}
+    parcel = parcel or analysis.get("parcel") or {}
+    pnu = _valid_pnu(parcel.get("pnu"))
+    if not pnu:
+        raise HTTPException(status_code=400, detail="저장할 PNU가 필요합니다.")
+    row = await db.fetchrow(
+        """
+        insert into user_parcels (user_id, pnu, address, admin_name, area_ha, parcel, last_analysis, note)
+        values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8)
+        on conflict (user_id, pnu) do update set
+          address = coalesce(excluded.address, user_parcels.address),
+          admin_name = coalesce(excluded.admin_name, user_parcels.admin_name),
+          area_ha = coalesce(excluded.area_ha, user_parcels.area_ha),
+          parcel = excluded.parcel,
+          last_analysis = case when excluded.last_analysis = '{}'::jsonb then user_parcels.last_analysis else excluded.last_analysis end,
+          note = coalesce(excluded.note, user_parcels.note),
+          updated_at = now()
+        returning id, pnu, address, admin_name, area_ha, parcel, last_analysis, note, created_at, updated_at
+        """,
+        user["id"],
+        pnu,
+        parcel.get("address"),
+        parcel.get("adminName"),
+        _number_or_none(parcel.get("areaHa")),
+        json.dumps(parcel, ensure_ascii=False),
+        json.dumps(analysis, ensure_ascii=False),
+        note,
+    )
+    return row
+
+
+async def _insert_analysis_record(user, analysis: dict, user_parcel_id, title: str | None = None):
+    parcel = analysis.get("parcel") or {}
+    row = await db.fetchrow(
+        """
+        insert into analysis_records (user_id, user_parcel_id, pnu, title, analysis)
+        values ($1,$2,$3,$4,$5::jsonb)
+        returning id, user_parcel_id, pnu, title, analysis, created_at
+        """,
+        user["id"],
+        user_parcel_id,
+        _valid_pnu(parcel.get("pnu")),
+        title or _analysis_record_title(analysis),
+        json.dumps(analysis, ensure_ascii=False),
+    )
+    return row
+
+
+def _analysis_record_title(analysis: dict) -> str:
+    parcel = analysis.get("parcel") or {}
+    address = parcel.get("address") or parcel.get("pnu") or "선택 필지"
+    scenario = (analysis.get("scores") or {}).get("recommendedScenario") or "경영 분석"
+    return f"{address} · {scenario}"
+
+
+async def _ensure_analysis_alerts(user, user_parcel_id, analysis: dict) -> None:
+    scores = analysis.get("scores") or {}
+    parcel = analysis.get("parcel") or {}
+    pnu = _valid_pnu(parcel.get("pnu"))
+    risk = _number_or_none(scores.get("disasterRisk"))
+    scenario = str(scores.get("recommendedScenario") or "")
+    alerts = []
+    if risk is not None and risk >= 60:
+        alerts.append(("재난위험 점검", f"재난위험 점수 {round(risk)}점입니다. 우기 전 배수와 사면 하단을 확인하세요.", "주의"))
+    if "탄소" in scenario:
+        alerts.append(("탄소상쇄 확인", "영급, 수종, 제외 면적을 현장 기록에 채운 뒤 탄소상쇄 사례와 비교하세요.", "안내"))
+    if not alerts:
+        alerts.append(("현장 기록 보완", "임도 접근, 경사, 수종, 영급을 현장에서 확인하면 다음 분석 품질이 올라갑니다.", "안내"))
+    for title, message, level in alerts:
+        await db.execute(
+            """
+            insert into user_alerts (user_id, user_parcel_id, pnu, title, message, level)
+            select $1,$2,$3,$4,$5,$6
+            where not exists (
+              select 1 from user_alerts
+              where user_id = $1 and user_parcel_id = $2 and title = $4 and status <> '완료'
+            )
+            """,
+            user["id"],
+            user_parcel_id,
+            pnu,
+            title,
+            message,
+            level,
+        )
+
+
+async def _user_parcel_rows(user):
+    return await db.fetch(
+        """
+        select id, pnu, address, admin_name, area_ha, parcel, last_analysis, note, created_at, updated_at
+        from user_parcels
+        where user_id = $1
+        order by updated_at desc
+        limit 100
+        """,
+        user["id"],
+    )
+
+
+async def _analysis_record_rows(user):
+    return await db.fetch(
+        """
+        select id, user_parcel_id, pnu, title, analysis, created_at
+        from analysis_records
+        where user_id = $1
+        order by created_at desc
+        limit 80
+        """,
+        user["id"],
+    )
+
+
+async def _task_rows(user):
+    return await db.fetch(
+        """
+        select id, user_parcel_id, pnu, title, category, status, due_date, note, created_at, updated_at
+        from work_tasks
+        where user_id = $1
+        order by
+          case status when '진행 중' then 0 when '대기' then 1 when '보류' then 2 else 3 end,
+          due_date nulls last,
+          updated_at desc
+        limit 120
+        """,
+        user["id"],
+    )
+
+
+async def _field_note_rows(user):
+    return await db.fetch(
+        """
+        select id, user_parcel_id, pnu, note, lat, lon, attachments, created_at
+        from field_notes
+        where user_id = $1
+        order by created_at desc
+        limit 80
+        """,
+        user["id"],
+    )
+
+
+async def _document_rows(user):
+    return await db.fetch(
+        """
+        select id, user_parcel_id, pnu, name, kind, source, payload, created_at
+        from user_documents
+        where user_id = $1
+        order by created_at desc
+        limit 80
+        """,
+        user["id"],
+    )
+
+
+async def _alert_rows(user):
+    return await db.fetch(
+        """
+        select id, user_parcel_id, pnu, title, message, level, due_at, status, created_at
+        from user_alerts
+        where user_id = $1
+        order by
+          case status when '대기' then 0 when '확인' then 1 else 2 end,
+          due_at nulls last,
+          created_at desc
+        limit 80
+        """,
+        user["id"],
+    )
+
+
+async def _share_rows(user):
+    return await db.fetch(
+        """
+        select id, user_parcel_id, share_token, permission, created_at, expires_at
+        from user_shares
+        where user_id = $1
+        order by created_at desc
+        limit 50
+        """,
+        user["id"],
+    )
+
+
+async def _user_quote_rows(user):
+    return await db.fetch(
+        """
+        select id, pnu, address, admin_name, area_ha, work_type, recommended_scenario,
+          risk_score, access_score, status, created_at
+        from work_requests
+        where user_id = $1
+        order by created_at desc
+        limit 80
+        """,
+        user["id"],
+    )
+
+
+def _user_parcel_row(row) -> dict:
+    return {
+        "id": str(row["id"]),
+        "pnu": row["pnu"],
+        "address": row["address"],
+        "adminName": row["admin_name"],
+        "areaHa": _round_or_none(row["area_ha"], 2),
+        "parcel": _json_object(row["parcel"]),
+        "lastAnalysis": _json_object(row["last_analysis"]),
+        "note": row["note"],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "updatedAt": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+def _analysis_record_row(row) -> dict:
+    return {
+        "id": str(row["id"]),
+        "userParcelId": str(row["user_parcel_id"]) if row["user_parcel_id"] else None,
+        "pnu": row["pnu"],
+        "title": row["title"],
+        "analysis": _json_object(row["analysis"]),
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+    }
+
+
+def _task_row(row) -> dict:
+    return {
+        "id": str(row["id"]),
+        "userParcelId": str(row["user_parcel_id"]) if row["user_parcel_id"] else None,
+        "pnu": row["pnu"],
+        "title": row["title"],
+        "category": row["category"],
+        "status": row["status"],
+        "dueDate": row["due_date"].isoformat() if row["due_date"] else None,
+        "note": row["note"],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "updatedAt": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+def _field_note_row(row) -> dict:
+    return {
+        "id": str(row["id"]),
+        "userParcelId": str(row["user_parcel_id"]) if row["user_parcel_id"] else None,
+        "pnu": row["pnu"],
+        "note": row["note"],
+        "lat": _round_or_none(row["lat"], 6),
+        "lon": _round_or_none(row["lon"], 6),
+        "attachments": row["attachments"] if isinstance(row["attachments"], list) else [],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+    }
+
+
+def _document_row(row) -> dict:
+    return {
+        "id": str(row["id"]),
+        "userParcelId": str(row["user_parcel_id"]) if row["user_parcel_id"] else None,
+        "pnu": row["pnu"],
+        "name": row["name"],
+        "kind": row["kind"],
+        "source": row["source"],
+        "payload": _json_object(row["payload"]),
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+    }
+
+
+def _alert_row(row) -> dict:
+    return {
+        "id": str(row["id"]),
+        "userParcelId": str(row["user_parcel_id"]) if row["user_parcel_id"] else None,
+        "pnu": row["pnu"],
+        "title": row["title"],
+        "message": row["message"],
+        "level": row["level"],
+        "dueAt": row["due_at"].isoformat() if row["due_at"] else None,
+        "status": row["status"],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+    }
+
+
+def _share_row(row) -> dict:
+    token = row["share_token"]
+    return {
+        "id": str(row["id"]),
+        "userParcelId": str(row["user_parcel_id"]) if row["user_parcel_id"] else None,
+        "shareToken": token,
+        "url": f"{settings.app_base_url.rstrip('/')}/api/share/{token}",
+        "permission": row["permission"],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "expiresAt": row["expires_at"].isoformat() if row["expires_at"] else None,
+    }
+
+
+def _shared_parcel_row(row) -> dict:
+    return {
+        "shareToken": row["share_token"],
+        "permission": row["permission"],
+        "pnu": row["pnu"],
+        "address": row["address"],
+        "adminName": row["admin_name"],
+        "areaHa": _round_or_none(row["area_ha"], 2),
+        "parcel": _json_object(row["parcel"]),
+        "lastAnalysis": _json_object(row["last_analysis"]),
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "expiresAt": row["expires_at"].isoformat() if row["expires_at"] else None,
     }
 
 
