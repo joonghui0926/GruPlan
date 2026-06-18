@@ -1229,41 +1229,64 @@ async def _regional_parcel_candidates(region_text: str | None, limit: int = 40) 
         return []
     rows = await db.fetch(
         """
-        select pnu
-        from parcels
-        where pnu is not null
-          and ($1::text is null or admin_name ilike '%' || $1 || '%' or address ilike '%' || $1 || '%')
-        order by pnu
-        limit $2
+        with base as (
+          select pnu, address, admin_name, geom, ST_Area(geom::geography) / 10000.0 as area_ha
+          from parcels
+          where pnu is not null
+            and ($1::text is null or admin_name ilike '%' || $1 || '%' or address ilike '%' || $1 || '%')
+          order by pnu
+          limit $2
+        )
+        select
+          b.pnu,
+          b.address,
+          b.admin_name,
+          b.area_ha,
+          coalesce((
+            select count(*)::int
+            from planting_zones z
+            where ST_Intersects(b.geom, z.geom)
+          ), 0) as planting_fit_count,
+          exists (
+            select 1
+            from economic_forest_zones e
+            where ST_Intersects(b.geom, e.geom)
+          ) as economic_forest,
+          (
+            select s.properties
+            from forest_stands s
+            where ST_Intersects(b.geom, s.geom)
+            order by ST_Area(ST_Intersection(b.geom, s.geom)::geography) desc
+            limit 1
+          ) as stand_properties,
+          (
+            select s.properties
+            from forest_soils s
+            where ST_Intersects(b.geom, s.geom)
+            order by ST_Area(ST_Intersection(b.geom, s.geom)::geography) desc
+            limit 1
+          ) as soil_properties
+        from base b
         """,
         region_text,
         limit,
     )
-    candidates = []
-    for row in rows:
-        spatial = await _query_spatial_features(AnalysisRequest(pnu=row["pnu"], include_live=False))
-        candidate = _candidate_from_spatial_row(spatial)
-        if candidate:
-            candidates.append(candidate)
+    candidates = [_candidate_from_summary_row(row) for row in rows]
+    candidates = [candidate for candidate in candidates if candidate]
     candidates.sort(key=lambda item: (-(item.get("riskScore") or 0), item.get("accessScore") if item.get("accessScore") is not None else 100))
     return candidates
 
 
-def _candidate_from_spatial_row(row) -> dict | None:
+def _candidate_from_summary_row(row) -> dict | None:
     if row is None:
         return None
-    raw_features = _json_object(row["features"])
-    stand_properties = _feature_properties(raw_features, "stand")
-    soil_properties = _feature_properties(raw_features, "soil")
-    stand_age_class = _extract_int_property(stand_properties, STAND_AGE_KEYS, row["stand_age_class"])
-    slope_degree = _extract_slope_degree(soil_properties, row["slope_degree"])
+    stand_properties = _json_object(row["stand_properties"])
+    soil_properties = _json_object(row["soil_properties"])
+    stand_age_class = _extract_int_property(stand_properties, STAND_AGE_KEYS)
+    slope_degree = _extract_slope_degree(soil_properties, None)
     features = FeatureSet(
         area_ha=float(row["area_ha"]) if row["area_ha"] is not None else None,
-        road_distance_m=float(row["road_distance_m"]) if row["road_distance_m"] is not None else None,
-        road_density_m_per_ha=float(row["road_density_m_per_ha"]) if row["road_density_m_per_ha"] is not None else None,
         slope_degree=slope_degree,
-        avg_landslide_grade=_number_or_none(row["avg_landslide_grade"]),
-        high_landslide_ratio=_number_or_none(row["high_landslide_ratio"]),
         economic_forest=bool(row["economic_forest"]),
         planting_fit_count=int(row["planting_fit_count"] or 0),
         stand_age_class=stand_age_class,
