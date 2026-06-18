@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import re
 from contextlib import asynccontextmanager
@@ -25,6 +26,7 @@ from .settings import get_settings
 settings = get_settings()
 db = Database(settings)
 public_client = PublicApiClient(settings)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -464,7 +466,18 @@ async def work_request_summary(region: str | None = None):
     work_items = [_work_request_row(row) for row in work_rows]
     for item in work_items:
         item["sourceType"] = "견적 수요"
-    candidates = await _regional_parcel_candidates(region_text)
+    warnings = []
+    try:
+        candidates = await _regional_parcel_candidates(region_text)
+    except Exception as exc:
+        logger.warning("regional parcel candidate aggregation failed", exc_info=exc)
+        candidates = []
+        warnings.append(
+            {
+                "scope": "publicCandidates",
+                "message": "공간 후보 계산을 완료하지 못했습니다.",
+            }
+        )
     combined = _dashboard_items(work_items, candidates)
     return {
         "region": region_text,
@@ -474,6 +487,8 @@ async def work_request_summary(region: str | None = None):
         "recent": combined[:20],
         "workRequests": work_items[:20],
         "publicCandidates": candidates[:20],
+        "emptyState": _dashboard_empty_state(region_text) if not combined else None,
+        "warnings": warnings,
     }
 
 
@@ -1229,13 +1244,31 @@ async def _regional_parcel_candidates(region_text: str | None, limit: int = 40) 
         return []
     rows = await db.fetch(
         """
-        with base as (
-          select pnu, address, admin_name, geom, ST_Area(geom::geography) / 10000.0 as area_ha
+        with raw_base as (
+          select pnu, address, admin_name, geom
           from parcels
           where pnu is not null
+            and geom is not null
             and ($1::text is null or admin_name ilike '%' || $1 || '%' or address ilike '%' || $1 || '%')
           order by pnu
           limit $2
+        ),
+        base as (
+          select
+            pnu,
+            address,
+            admin_name,
+            clean_geom as geom,
+            ST_Area(clean_geom::geography) / 10000.0 as area_ha
+          from (
+            select
+              pnu,
+              address,
+              admin_name,
+              ST_CollectionExtract(ST_MakeValid(geom), 3) as clean_geom
+            from raw_base
+          ) cleaned
+          where not ST_IsEmpty(clean_geom)
         )
         select
           b.pnu,
@@ -1245,25 +1278,29 @@ async def _regional_parcel_candidates(region_text: str | None, limit: int = 40) 
           coalesce((
             select count(*)::int
             from planting_zones z
-            where ST_Intersects(b.geom, z.geom)
+            where z.geom && b.geom
+              and ST_Intersects(b.geom, ST_CollectionExtract(ST_MakeValid(z.geom), 3))
           ), 0) as planting_fit_count,
           exists (
             select 1
             from economic_forest_zones e
-            where ST_Intersects(b.geom, e.geom)
+            where e.geom && b.geom
+              and ST_Intersects(b.geom, ST_CollectionExtract(ST_MakeValid(e.geom), 3))
           ) as economic_forest,
           (
             select s.properties
             from forest_stands s
-            where ST_Intersects(b.geom, s.geom)
-            order by ST_Area(ST_Intersection(b.geom, s.geom)::geography) desc
+            where s.geom && b.geom
+              and ST_Intersects(b.geom, ST_CollectionExtract(ST_MakeValid(s.geom), 3))
+            order by ST_Area(ST_Intersection(b.geom, ST_CollectionExtract(ST_MakeValid(s.geom), 3))::geography) desc
             limit 1
           ) as stand_properties,
           (
             select s.properties
             from forest_soils s
-            where ST_Intersects(b.geom, s.geom)
-            order by ST_Area(ST_Intersection(b.geom, s.geom)::geography) desc
+            where s.geom && b.geom
+              and ST_Intersects(b.geom, ST_CollectionExtract(ST_MakeValid(s.geom), 3))
+            order by ST_Area(ST_Intersection(b.geom, ST_CollectionExtract(ST_MakeValid(s.geom), 3))::geography) desc
             limit 1
           ) as soil_properties
         from base b
@@ -1337,6 +1374,19 @@ def _dashboard_overview(work_items: list[dict], candidates: list[dict], combined
         "totalAreaHa": round(sum(item.get("areaHa") or 0 for item in combined), 2),
         "avgRisk": round(sum(risk_values) / len(risk_values), 1) if risk_values else None,
         "avgAccess": round(sum(access_values) / len(access_values), 1) if access_values else None,
+    }
+
+
+def _dashboard_empty_state(region_text: str | None) -> dict:
+    region_label = region_text or "선택 지역"
+    return {
+        "title": f"{region_label} 집계 데이터가 아직 없습니다.",
+        "message": "해당 지역 산지를 조회하거나 법인 탭에서 견적 수요를 저장하면 면적, 위험도, 접근성, 작업 유형 집계가 생성됩니다.",
+        "actions": [
+            "산주 탭에서 해당 시군구의 산지 필지를 선택",
+            "공간분석 완료 후 법인 탭에서 견적 수요 저장",
+            "저장된 수요와 공공 후보를 기준으로 우선 검토 목록 확인",
+        ],
     }
 
 
