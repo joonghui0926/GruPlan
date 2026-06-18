@@ -107,6 +107,8 @@ create table if not exists app_users (
   email text,
   display_name text,
   avatar_url text,
+  password_hash text,
+  email_verified_at timestamptz,
   profile jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   last_login_at timestamptz not null default now(),
@@ -236,6 +238,8 @@ create table if not exists work_requests (
 
 alter table work_requests add column if not exists user_id uuid references app_users(id) on delete set null;
 alter table work_requests add column if not exists user_parcel_id uuid references user_parcels(id) on delete set null;
+alter table app_users add column if not exists password_hash text;
+alter table app_users add column if not exists email_verified_at timestamptz;
 
 create index if not exists parcels_geom_gix on parcels using gist (geom);
 create index if not exists forest_stands_geom_gix on forest_stands using gist (geom);

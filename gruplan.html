@@ -146,30 +146,61 @@
       border-top: 1px solid rgba(255,255,255,.18);
       border-bottom: 1px solid rgba(255,255,255,.18);
     }
-    .authProvider {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 74px;
-      padding: 0;
+    .authForm {
+      display: grid;
+      gap: 16px;
+      padding: 18px 0 0;
+    }
+    .authField {
+      display: grid;
+      gap: 8px;
+      color: rgba(255,255,255,.62);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .authField[hidden] { display: none; }
+    .authField input {
+      width: 100%;
       border: 0;
       border-bottom: 1px solid rgba(255,255,255,.18);
       background: transparent;
       color: var(--white);
-      text-decoration: none;
-      font-size: 19px;
-      font-weight: 800;
-      cursor: pointer;
+      outline: 0;
+      padding: 0 0 14px;
+      font: inherit;
+      font-size: 18px;
+      font-weight: 700;
     }
-    .authProvider:last-child { border-bottom: 0; }
-    .authProvider span {
+    .authField input::placeholder { color: rgba(255,255,255,.34); }
+    .authSubmit {
       display: inline-flex;
       align-items: center;
-      gap: 12px;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 58px;
+      margin-top: 4px;
+      padding: 0;
+      border: 0;
+      border-bottom: 1px solid rgba(255,255,255,.28);
+      background: transparent;
+      color: var(--white);
+      font-size: 20px;
+      font-weight: 900;
     }
-    .authProvider.isDisabled {
+    .authSubmit.isBusy {
       pointer-events: none;
-      color: rgba(255,255,255,.42);
+      color: rgba(255,255,255,.56);
+    }
+    .authSwitch {
+      margin: 18px 0 0;
+      color: rgba(255,255,255,.62);
+      font-size: 13px;
+    }
+    .authSwitch a {
+      color: var(--white);
+      font-weight: 900;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(255,255,255,.42);
     }
     .authHint {
       margin-top: 18px;
@@ -1608,10 +1639,24 @@
       </div>
       <div>
         <div class="authActions">
-          <a id="googleLoginBtn" class="authProvider" href="/auth/google/start"><span><i data-lucide="chrome" class="icon"></i>Google로 계속</span><i data-lucide="arrow-right" class="icon"></i></a>
-          <a id="kakaoLoginBtn" class="authProvider" href="/auth/kakao/start"><span><i data-lucide="message-circle" class="icon"></i>Kakao로 계속</span><i data-lucide="arrow-right" class="icon"></i></a>
+          <form id="emailAuthForm" class="authForm">
+            <label id="displayNameField" class="authField">
+              <span>이름</span>
+              <input id="displayNameInput" autocomplete="name" placeholder="산주 또는 담당자 이름">
+            </label>
+            <label class="authField">
+              <span>이메일</span>
+              <input id="emailInput" type="email" autocomplete="email" placeholder="name@example.com" required>
+            </label>
+            <label class="authField">
+              <span>비밀번호</span>
+              <input id="passwordInput" type="password" autocomplete="current-password" placeholder="8자 이상" required minlength="8">
+            </label>
+            <button id="emailAuthSubmit" class="authSubmit" type="submit"><span>로그인</span><i data-lucide="arrow-right" class="icon"></i></button>
+          </form>
         </div>
-        <p class="authHint" id="authHint">OAuth 설정이 연결된 제공자로 로그인할 수 있습니다.</p>
+        <p class="authHint" id="authHint">이메일 계정으로 내 산 보관함과 업무 기록을 안전하게 이어갑니다.</p>
+        <p class="authSwitch" id="authSwitchText">계정이 없나요? <a id="authSwitchLink" href="/signup">회원가입</a></p>
       </div>
     </div>
   </section>
@@ -1975,6 +2020,7 @@
     });
     document.getElementById("accountLink").addEventListener("click", () => switchPersona("accountPanel"));
     document.getElementById("logoutBtn").addEventListener("click", logoutUser);
+    document.getElementById("emailAuthForm").addEventListener("submit", submitEmailAuth);
     document.getElementById("saveParcelBtn").addEventListener("click", saveCurrentParcel);
     document.getElementById("saveAnalysisBtn").addEventListener("click", saveCurrentAnalysis);
     document.getElementById("shareParcelBtn").addEventListener("click", createShareLink);
@@ -2089,12 +2135,47 @@
       document.querySelectorAll(".band, footer").forEach((element) => {
         element.hidden = isAuthPage;
       });
+      if (!isAuthPage) return;
       const params = new URLSearchParams(location.search);
-      const next = params.get("next") || "/#account";
-      document.getElementById("googleLoginBtn").href = `/auth/google/start${queryString({ next })}`;
-      document.getElementById("kakaoLoginBtn").href = `/auth/kakao/start${queryString({ next })}`;
+      const signup = location.pathname === "/signup";
+      document.getElementById("displayNameField").hidden = !signup;
+      document.getElementById("passwordInput").autocomplete = signup ? "new-password" : "current-password";
+      document.getElementById("emailAuthSubmit").innerHTML = `<span>${signup ? "회원가입" : "로그인"}</span>${icon("arrow-right")}`;
+      document.getElementById("authSwitchText").innerHTML = signup
+        ? `이미 계정이 있나요? <a id="authSwitchLink" href="/signin${queryString({ next: params.get("next") || "/#account" })}">로그인</a>`
+        : `계정이 없나요? <a id="authSwitchLink" href="/signup${queryString({ next: params.get("next") || "/#account" })}">회원가입</a>`;
+      document.getElementById("authHint").textContent = signup
+        ? "이메일과 비밀번호로 계정을 만들면 분석 기록과 업무가 내 보관함에 저장됩니다."
+        : "이메일 계정으로 내 산 보관함과 업무 기록을 이어갑니다.";
       if (params.get("error")) {
-        document.getElementById("authHint").textContent = "로그인을 완료하지 못했습니다. 제공자 설정과 콜백 주소를 확인해주세요.";
+        document.getElementById("authHint").textContent = "로그인을 완료하지 못했습니다. 이메일과 비밀번호를 다시 확인해주세요.";
+      }
+      lucide.createIcons();
+    }
+
+    async function submitEmailAuth(event) {
+      event.preventDefault();
+      const signup = location.pathname === "/signup";
+      const next = new URLSearchParams(location.search).get("next") || "/#account";
+      const payload = {
+        email: document.getElementById("emailInput").value.trim(),
+        password: document.getElementById("passwordInput").value,
+        next
+      };
+      if (signup) payload.display_name = document.getElementById("displayNameInput").value.trim();
+      setButtonBusy("emailAuthSubmit", true, signup ? "가입 중" : "로그인 중");
+      try {
+        const data = await api(`/auth/email/${signup ? "signup" : "login"}`, {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        state.user = data.user || null;
+        renderAuthNav();
+        location.href = data.next || next;
+      } catch (error) {
+        document.getElementById("authHint").textContent = extractErrorMessage(error);
+      } finally {
+        setButtonBusy("emailAuthSubmit", false);
       }
     }
 
@@ -2130,13 +2211,7 @@
     }
 
     function configureProviderButtons() {
-      const google = document.getElementById("googleLoginBtn");
-      const kakao = document.getElementById("kakaoLoginBtn");
-      google.classList.toggle("isDisabled", !state.authProviders.google);
-      kakao.classList.toggle("isDisabled", !state.authProviders.kakao);
-      if (!state.authProviders.google && !state.authProviders.kakao) {
-        document.getElementById("authHint").textContent = "Render 환경변수에 Google 또는 Kakao OAuth 키를 넣으면 로그인 버튼이 활성화됩니다.";
-      }
+      if (!document.getElementById("authPage").hidden) lucide.createIcons();
     }
 
     async function logoutUser() {

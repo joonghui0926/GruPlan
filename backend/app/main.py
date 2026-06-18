@@ -76,6 +76,13 @@ class WorkRequestPayload(BaseModel):
     status: str = "견적 요청"
 
 
+class EmailAuthPayload(BaseModel):
+    email: str
+    password: str
+    display_name: str | None = None
+    next: str | None = "/#account"
+
+
 class UserParcelPayload(BaseModel):
     analysis: dict | None = None
     parcel: dict | None = None
@@ -222,6 +229,7 @@ LIVE_OPEN_API_SOURCE_IDS = {"D11"}
 SNAPSHOT_SOURCE_IDS = {"D10"}
 SESSION_COOKIE_NAME = "gruplan_session"
 SESSION_DAYS = 30
+PASSWORD_ITERATIONS = 210_000
 REGION_CODE_HINTS = {
     "춘천시": "51110",
     "원주시": "51130",
@@ -249,10 +257,7 @@ def _public_error(exc: PublicDataError) -> dict:
 
 
 def _auth_providers_configured() -> dict:
-    return {
-        "google": bool(settings.google_client_id and settings.google_client_secret),
-        "kakao": bool(settings.kakao_client_id),
-    }
+    return {"email": True}
 
 
 def _safe_next_path(value: str | None) -> str:
@@ -303,6 +308,75 @@ def _auth_redirect_uri(provider: str) -> str:
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _normalize_email(value: str) -> str:
+    email = str(value or "").strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=400, detail="이메일 형식이 맞지 않습니다.")
+    return email
+
+
+def _hash_password(password: str) -> str:
+    if len(password or "") < 8:
+        raise HTTPException(status_code=400, detail="비밀번호는 8자 이상으로 입력해주세요.")
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
+    return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${_b64_url(salt)}${_b64_url(digest)}"
+
+
+def _verify_password(password: str, stored: str | None) -> bool:
+    if not stored:
+        return False
+    try:
+        algorithm, iterations, salt_text, digest_text = stored.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        salt = _b64_decode(salt_text)
+        expected = _b64_decode(digest_text)
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iterations))
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError):
+        return False
+
+
+async def _create_session(user) -> str:
+    raw_token = secrets.token_urlsafe(36)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
+    await db.execute(
+        """
+        insert into user_sessions (token_hash, user_id, expires_at)
+        values ($1, $2, $3)
+        """,
+        _hash_token(raw_token),
+        user["id"],
+        expires_at,
+    )
+    return raw_token
+
+
+def _set_session_cookie(response: Response, raw_token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        raw_token,
+        max_age=SESSION_DAYS * 24 * 60 * 60,
+        expires=SESSION_DAYS * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.app_base_url.startswith("https://"),
+        samesite="lax",
+        path="/",
+    )
+
+
+async def _email_auth_response(user, next_path: str | None = "/#account") -> Response:
+    raw_token = await _create_session(user)
+    body = {
+        "user": _user_payload(user),
+        "next": _safe_next_path(next_path),
+    }
+    response = Response(json.dumps(body, ensure_ascii=False), media_type="application/json")
+    _set_session_cookie(response, raw_token)
+    return response
 
 
 async def _google_profile(code: str) -> dict:
@@ -548,13 +622,60 @@ async def current_user(request: Request):
     user = await _current_user(request)
     return {
         "user": _user_payload(user) if user else None,
-        "auth": {
-            "providers": {
-                "google": bool(settings.google_client_id and settings.google_client_secret),
-                "kakao": bool(settings.kakao_client_id),
-            }
-        },
+        "auth": {"providers": _auth_providers_configured()},
     }
+
+
+@app.post("/auth/email/signup")
+async def email_signup(payload: EmailAuthPayload):
+    if not db.pool:
+        raise HTTPException(status_code=503, detail="DATABASE_URL이 필요합니다.")
+    email = _normalize_email(payload.email)
+    existing = await db.fetchrow(
+        "select id from app_users where provider = 'email' and provider_user_id = $1",
+        email,
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="이미 가입된 이메일입니다. 로그인으로 이어가주세요.")
+    display_name = (payload.display_name or email.split("@", 1)[0]).strip()[:80]
+    row = await db.fetchrow(
+        """
+        insert into app_users (provider, provider_user_id, email, display_name, password_hash, email_verified_at)
+        values ('email', $1, $1, $2, $3, now())
+        returning id, provider, provider_user_id, email, display_name, avatar_url, created_at, last_login_at
+        """,
+        email,
+        display_name,
+        _hash_password(payload.password),
+    )
+    return await _email_auth_response(row, payload.next)
+
+
+@app.post("/auth/email/login")
+async def email_login(payload: EmailAuthPayload):
+    if not db.pool:
+        raise HTTPException(status_code=503, detail="DATABASE_URL이 필요합니다.")
+    email = _normalize_email(payload.email)
+    row = await db.fetchrow(
+        """
+        select id, provider, provider_user_id, email, display_name, avatar_url,
+          password_hash, created_at, last_login_at
+        from app_users
+        where provider = 'email' and provider_user_id = $1
+        """,
+        email,
+    )
+    if not row or not _verify_password(payload.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호를 확인해주세요.")
+    user = await db.fetchrow(
+        """
+        update app_users set last_login_at = now()
+        where id = $1
+        returning id, provider, provider_user_id, email, display_name, avatar_url, created_at, last_login_at
+        """,
+        row["id"],
+    )
+    return await _email_auth_response(user, payload.next)
 
 
 @app.get("/auth/{provider}/start")
@@ -612,28 +733,9 @@ async def auth_callback(provider: str, code: str | None = None, state: str | Non
     except Exception as exc:
         logger.warning("oauth callback failed: %s", exc, exc_info=True)
         return RedirectResponse("/signin?error=oauth_callback")
-    raw_token = secrets.token_urlsafe(36)
-    expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
-    await db.execute(
-        """
-        insert into user_sessions (token_hash, user_id, expires_at)
-        values ($1, $2, $3)
-        """,
-        _hash_token(raw_token),
-        user["id"],
-        expires_at,
-    )
+    raw_token = await _create_session(user)
     response = RedirectResponse(_safe_next_path(state_payload.get("next") or "/"))
-    response.set_cookie(
-        SESSION_COOKIE_NAME,
-        raw_token,
-        max_age=SESSION_DAYS * 24 * 60 * 60,
-        expires=SESSION_DAYS * 24 * 60 * 60,
-        httponly=True,
-        secure=settings.app_base_url.startswith("https://"),
-        samesite="lax",
-        path="/",
-    )
+    _set_session_cookie(response, raw_token)
     return response
 
 
